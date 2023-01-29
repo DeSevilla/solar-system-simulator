@@ -1,0 +1,1 @@
+This is a simple simulation of the solar system, in Rust. Classes and such are in orbitor.rs, while the specifics of our solar system and the code to plot it as an image are in main.rs.
