@@ -1,6 +1,8 @@
 pub mod orbitor {
     use std::f64::consts::TAU;
 
+    use plotters::style::RGBColor;
+
     type Point2D = (f64, f64);
     type Point3D = (f64, f64, f64);
 
@@ -36,8 +38,67 @@ pub mod orbitor {
     }
 
     pub enum SolarSystemObject<'a> {
-        Static { s: &'a StaticObject },
-        Moving { o: &'a Orbitor<'a> },
+        Static { name: &'a str, color: &'a RGBColor, s: StaticObject },
+        Moving { name: &'a str, color: &'a RGBColor, o: Orbitor<'a> },
+    }
+
+    impl<'a> SolarSystemObject<'a> {
+        pub fn new_static(name: &'a str, color: &'a RGBColor, x: f64, y: f64, z: f64) -> SolarSystemObject<'a> {
+            SolarSystemObject::Static {
+                name: name,
+                color: color,
+                s: StaticObject::new(x, y, z)
+            }
+        }
+
+        pub fn new_orbitor(name: &'a str,
+                           color: &'a RGBColor,
+                           parent: &'a SolarSystemObject<'a>,
+                           semimajor: f64,
+                           eccentricity: f64,
+                           inclination: f64,
+                           lan: f64,
+                           aop: f64,
+                           mae: f64) -> SolarSystemObject<'a> {
+            SolarSystemObject::Moving { 
+                name: name,
+                color: color,
+                o: Orbitor::new(parent, semimajor, eccentricity, inclination, lan, aop, mae)}
+        }
+
+        pub fn get_name(&self) -> &str {
+            match self {
+                Self::Static { name, .. } => name,
+                Self::Moving { name, .. } => name,
+            }
+        }
+
+        pub fn get_color(&self) -> &RGBColor {
+            match self {
+                Self::Static { color, .. } => color,
+                Self::Moving { color, .. } => color,
+            }
+        }
+    }
+
+    pub struct SolarSystem<'a> {
+        objects: Vec<&'a SolarSystemObject<'a>>
+    }
+
+    impl<'a> SolarSystem<'a> {
+        pub fn new() -> SolarSystem<'a> {
+            SolarSystem {
+                objects: Vec::new(),
+            }
+        }
+
+        pub fn add(&mut self, obj: &'a SolarSystemObject<'a>) {
+            self.objects.push(obj)
+        }
+
+        pub fn objects(&'a self) -> &'a Vec<&'a SolarSystemObject<'a>> {
+            &(self.objects)
+        }
     }
 
     impl<'a> Orbitor<'a> {
@@ -47,7 +108,7 @@ pub mod orbitor {
                    inclination: f64, 
                    lan: f64,
                    aop: f64,
-                   mae: f64) -> Orbitor {
+                   mae: f64) -> Orbitor<'a> {
             Orbitor {
                 parent: parent,
                 semimajor: semimajor,
@@ -129,26 +190,26 @@ pub mod orbitor {
     impl Locatable for StaticObject {
         fn xyz(&self, _time: f64) -> Point3D {
             (self.x, self.y, self.z)
-        }  
+        }
 
         fn xy(&self, time: f64) -> Point2D {
             (self.x + time.cos(), self.y + time.sin())
-        }  
+        }
     }
 
     impl Locatable for SolarSystemObject<'_> {
         fn xyz(&self, time: f64) -> Point3D {
             match self {
-                Self::Static { s } => s.xyz(time),
-                Self::Moving { o } => o.xyz(time),
+                Self::Static { s, .. } => s.xyz(time),
+                Self::Moving { o, .. } => o.xyz(time),
             }
         }
         fn xy(&self, time: f64) -> Point2D {
             match self {
-                Self::Static { s } => s.xy(time),
-                Self::Moving { o } => o.xy(time),
+                Self::Static { s, .. } => s.xy(time),
+                Self::Moving { o, .. } => o.xy(time),
             }
         }
-    }   
+    }
 }
 
