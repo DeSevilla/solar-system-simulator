@@ -1,7 +1,9 @@
-use plotters::{prelude::*, style::full_palette::{GREY, ORANGE, BLUE_300}};
+use std::{f64::consts::TAU, collections::HashMap};
+
+use plotters::{prelude::*, style::full_palette::{GREY, ORANGE, BLUE_300, BLUE_100, PURPLE}};
 mod orbitor;
 
-use crate::orbitor::orbitor::{SolarSystemObject, SolarSystem, Locatable};
+use crate::orbitor::orbitor::{SolarSystemObject, SolarSystem, Locatable, deg_to_rad};
 fn main() {
     let mut solar_system = SolarSystem::new();
     let sun = SolarSystemObject::new_static(
@@ -22,12 +24,12 @@ fn main() {
         7.004,
         48.331,
         29.124,
-        0.0,
+        174.796,
     );
     solar_system.add(&mercury);
     let venus = SolarSystemObject::new_orbitor(
         "Venus",
-        &GREEN,
+        &PURPLE,
         4.8675e24,
         &sun,
         108208000.0,
@@ -35,7 +37,7 @@ fn main() {
         3.39458,
         76.68,
         54.884,
-        0.0,
+        50.115,
     );
     solar_system.add(&venus);
     let earth = SolarSystemObject::new_orbitor(
@@ -48,7 +50,7 @@ fn main() {
         0.00005,
         -11.26064, 
         114.20783,
-        0.0,
+        358.617,
     );
     solar_system.add(&earth);
     let moon = SolarSystemObject::new_orbitor(
@@ -103,6 +105,32 @@ fn main() {
         317.020,
     );
     solar_system.add(&saturn);
+    let uranus = SolarSystemObject::new_orbitor(
+        "Uranus",
+        &BLUE_100,
+        8.6810e25,
+        &sun,
+        2870972000.0,
+        0.04717,
+        0.773,
+        74.006, 
+        96.998857,
+        142.2386,
+    );
+    solar_system.add(&uranus);
+    let neptune = SolarSystemObject::new_orbitor(
+        "Neptune", 
+        &BLUE,
+        1.02413e26,
+        &sun,
+        4500000000.0,
+        0.008678,
+        1.770,
+        131.783,
+        273.187,
+        256.228,
+    );
+    solar_system.add(&neptune);
     // let (x, y, z) = sun.xyz(10.0);
     // let (x2, y2, z2) = mercury.xyz(10.0);
     // println!("{:?}", (-1000..1000)
@@ -116,21 +144,63 @@ fn main() {
     //     .map(|(x, y)| (x*x+y*y).sqrt())
     //     .min_by(|x, y| x.partial_cmp(y).unwrap()).unwrap());
     // println!("{} {} {}; {} {} {}", x, y, z, x2, y2, z2);
+    let mut zodiac = HashMap::new();
+    zodiac.insert(0, String::from("Aries"));
+    zodiac.insert(30, String::from("Taurus"));
+    zodiac.insert(60, String::from("Gemini"));
+    zodiac.insert(90, String::from("Cancer"));
+    zodiac.insert(120, String::from("Leo"));
+    zodiac.insert(150, String::from("Virgo"));
+    zodiac.insert(180, String::from("Libra"));
+    zodiac.insert(210, String::from("Scorpio"));
+    zodiac.insert(240, String::from("Sagittarius"));
+    zodiac.insert(270, String::from("Capricorn"));
+    zodiac.insert(300, String::from("Aquarius"));
+    zodiac.insert(330, String::from("Pisces"));
     println!("Drawing...");
-    let root_drawing_area = BitMapBackend::new("images/0.1.png", (4096, 4096))
+    let root_drawing_area = BitMapBackend::new("images/solar_system.png", (4096, 4096))
         .into_drawing_area();
 
     root_drawing_area.fill(&BLACK).unwrap();
-    let chart_size: f64 = 200.0;
+    let chart_size: f64 = 4750.0;
     let mut chart = ChartBuilder::on(&root_drawing_area)
         .build_cartesian_2d(-chart_size..chart_size, -chart_size..chart_size)
         .unwrap();
 
-    for obj in solar_system.objects() {
+    let time = 0.0;
+    let earth_loc = earth.xy(time);
+    for angle in zodiac.keys() {
+        let angle_rad = deg_to_rad(*angle as f64);
+        let far_edge = match earth_loc { (x, y) => (x + chart_size * angle_rad.cos(), y + chart_size * angle_rad.sin())};
         chart.draw_series(LineSeries::new(
-            obj.orbit_points(20000),
-            // (-5000..5000).map(|x| x as f64 / 10.0).map(|x| obj.xy(x)),
-            obj.get_color(),
+            vec![earth_loc, far_edge],
+            &WHITE,
         )).unwrap();
     }
+    for obj in solar_system.objects() {
+        let (ox, oy) = obj.xy(time);
+        let angle = obj.angle_deg(&earth, time);
+        chart.draw_series(LineSeries::new(vec![earth_loc, (ox, oy)], obj.get_color())).unwrap();
+        // chart.draw_series(LineSeries::new(
+        //     vec![(x2, y2), (x2 + 50.0 * angle_rad.cos(), y2 + 50.0 * angle_rad.sin())], 
+        //     obj.get_color()
+        // )).unwrap();
+        // let angle = obj.angle_deg(0.0);
+        let angle_rounded = (angle / 30.0).floor() as i32 * 30;
+        let sign = zodiac.get(&angle_rounded);
+        println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
+        // for point in (0..10).map(|i| i as f64 * TAU / 10.0).map(|i| match obj.xy(0.0) { (x, y) => (x + 5.0 * i.cos(), y + 5.0 * i.sin())}) {
+        //     print!("{},{} ", point.0, point.1);
+        // }
+        if ox.abs() <= chart_size && oy.abs() <= chart_size {
+            let stroke_width = if obj.get_name() == "Moon" {1} else {2};
+            chart.draw_series(LineSeries::new(
+                // (0..11).map(|i| i as f64 * TAU / 10.0).map(|i| match obj.xy(time) { (x, y) => (x + 10.0 * i.cos(), y + 10.0 * i.sin())}),
+                obj.orbit_points(20000),
+                // (-5000..5000).map(|x| x as f64 / 10.0).map(|x| obj.xy(x)),
+                Into::<ShapeStyle>::into(obj.get_color()).stroke_width(stroke_width),
+            )).unwrap();
+        }
+    }
+    println!("Done");
 }

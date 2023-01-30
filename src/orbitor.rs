@@ -2,8 +2,12 @@ pub mod orbitor {
     use std::f64::consts::TAU;
     use plotters::{style::RGBColor};
 
-    fn deg_to_rad(x: f64) -> f64 {
+    pub fn deg_to_rad(x: f64) -> f64 {
         x * TAU / 360.0
+    }
+
+    pub fn rad_to_deg(x: f64) -> f64 {
+        x / TAU * 360.0
     }
 
     const G: f64 = 6.67430e-11;
@@ -15,6 +19,14 @@ pub mod orbitor {
         fn xyz(&self, time: f64) -> Point3D;
         fn xy(&self, time: f64) -> Point2D;
         fn orbit_points(&self, num_points: i32) -> Vec<Point2D>;
+        fn angle_rad(&self, other: &dyn Locatable, time: f64) -> f64 {
+            let (x, y) = self.xy(time);
+            let (x2, y2) = other.xy(time);
+            ((y - y2).atan2(x - x2) + TAU) % TAU
+        }
+        fn angle_deg(&self, other: &dyn Locatable, time: f64) -> f64 {
+            rad_to_deg(self.angle_rad(other, time))
+        }
     }
 
     pub struct StaticObject {
@@ -69,8 +81,13 @@ pub mod orbitor {
         }
 
         fn orbital_period(&self) -> f64 {
-            let mu = G * (self.mass + self.parent.get_mass());
-            TAU / (mu/self.semimajor.powi(3)).sqrt()
+            match self.parent.orbital_period() {
+                Some(period) => period,
+                None => {
+                    let mu = G * (self.mass + self.parent.get_mass());
+                    TAU / (mu/self.semimajor.powi(3)).sqrt()
+                }
+            }
         }
 
         fn current_mean_anomaly(&self, time: f64) -> f64 {
@@ -151,7 +168,7 @@ pub mod orbitor {
                            lan: f64,
                            aop: f64,
                            mae: f64) -> SolarSystemObject<'a> {
-            SolarSystemObject::Moving { 
+            SolarSystemObject::Moving {
                 name: name,
                 color: color,
                 o: Orbitor::new(mass, parent, semimajor, eccentricity,
@@ -241,7 +258,7 @@ pub mod orbitor {
         fn orbit_points(&self, num_points: i32) -> Vec<Point2D> {
             let mut output = Vec::new();
             for time in (0..num_points).map(|x| x as f64 * TAU / num_points as f64) {
-                output.push((self.x + time.cos(), self.y + time.sin()));
+                output.push((self.x + 5.0 * time.cos(), self.y + 5.0 * time.sin()));
             }
             output
         }
