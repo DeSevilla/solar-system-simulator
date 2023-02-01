@@ -2,6 +2,8 @@ pub mod orbitor {
     use std::f64::consts::TAU;
     use plotters::{style::RGBColor};
 
+    const SCALING_FACTOR: f64 = 25000000.0;
+
     pub fn deg_to_rad(x: f64) -> f64 {
         x * TAU / 360.0
     }
@@ -18,7 +20,8 @@ pub mod orbitor {
     pub trait Locatable {
         fn xyz(&self, time: f64) -> Point3D;
         fn xy(&self, time: f64) -> Point2D;
-        fn orbit_points(&self, num_points: i32) -> Vec<Point2D>;
+        fn trajectory_2d(&self, num_points: i32) -> Vec<Point2D>;
+        fn trajectory_3d(&self, num_points: i32) -> Vec<Point3D>;
         fn angle_rad(&self, other: &dyn Locatable, time: f64) -> f64 {
             let (x, y) = self.xy(time);
             let (x2, y2) = other.xy(time);
@@ -140,7 +143,7 @@ pub mod orbitor {
             let x = ox * (aopcos * lancos - aopsin * inccos * lansin) - oy * (aopsin * lancos + aopcos * inccos * lansin);
             let y = ox * (aopcos * lansin + aopsin * inccos * lancos) + oy * (aopcos * inccos * lancos - aopsin * lansin);
             let z = ox * aopsin * incsin + oy * aopcos * incsin;
-            (x, y, z)
+            (x, z, y)
         }
     }
 
@@ -228,19 +231,29 @@ pub mod orbitor {
         fn xyz(&self, time: f64) -> Point3D {
             let (x, y, z) = self.parent.xyz(time);
             let (x2, y2, z2) = self.in_parent_coordinates(self.orbit_xy(time));
-            (x + x2, y + y2, z + z2)
+            ((x + x2 / SCALING_FACTOR), (y + y2 / SCALING_FACTOR), (z + z2 / SCALING_FACTOR))
         }
 
         fn xy(&self, time: f64) -> Point2D {
-            let (x, y, _) = self.xyz(time);
+            let (x, _, z) = self.xyz(time);
             // println!("{x} {y}");
-            (x / 1000000.0, y / 1000000.0)
+            (x, z)
         }
 
-        fn orbit_points(&self, num_points: i32) -> Vec<Point2D> {
+        fn trajectory_2d(&self, num_points: i32) -> Vec<Point2D> {
             let mut output = Vec::new();
-            for time in (0..num_points).map(|x| x as f64 * self.orbital_period() / num_points as f64) {
-                output.push(self.xy(time));
+            for time in (0..num_points+1).map(|x| x as f64 * self.orbital_period() / num_points as f64) {
+                let (x, y) = self.xy(time);
+                output.push((x, y));
+            }
+            output
+        }
+
+        fn trajectory_3d(&self, num_points: i32) -> Vec<Point3D> {
+            let mut output = Vec::new();
+            for time in (0..num_points+1).map(|x| x as f64 * self.orbital_period() / num_points as f64) {
+                let (x, y, z) = self.xyz(time);
+                output.push((x, y, z));
             }
             output
         }
@@ -252,14 +265,26 @@ pub mod orbitor {
         }
 
         fn xy(&self, _time: f64) -> Point2D {
-            (self.x, self.y)
+            (self.x, self.z)
         }
 
-        fn orbit_points(&self, num_points: i32) -> Vec<Point2D> {
+        fn trajectory_2d(&self, _num_points: i32) -> Vec<Point2D> {
             let mut output = Vec::new();
-            for time in (0..num_points).map(|x| x as f64 * TAU / num_points as f64) {
-                output.push((self.x + 5.0 * time.cos(), self.y + 5.0 * time.sin()));
-            }
+            // for time in (0..=7).map(|x| x as f64 * TAU / 7.0) {
+            //     output.push((self.x + (time - 0.2).cos() / 3.0, self.z + (time - 0.2).cos() / 3.0));
+            //     output.push((self.x + time.cos(), self.z + time.sin()));
+            // }
+            output.push((self.x, self.z));
+            output
+        }
+
+        fn trajectory_3d(&self, _num_points: i32) -> Vec<Point3D> {
+            let mut output = Vec::new();
+            // for time in (0..=7).map(|x| x as f64 * TAU / 7.0) {
+            //     output.push((self.x + (time - 0.2).cos() / 3.0, self.y + (time - 0.2).cos() / 3.0, self.z + (time - 0.2).cos() / 3.0));
+            //     output.push((self.x + time.cos(), self.y + time.sin(), self.z + time.sin() * time.cos()));
+            // }
+            output.push((self.x, self.y, self.z));
             output
         }
     }
@@ -279,10 +304,17 @@ pub mod orbitor {
             }
         }
 
-        fn orbit_points(&self, num_points: i32) -> Vec<Point2D> {
+        fn trajectory_2d(&self, num_points: i32) -> Vec<Point2D> {
             match self {
-                Self::Static { s, .. } => s.orbit_points(num_points),
-                Self::Moving { o, .. } => o.orbit_points(num_points),
+                Self::Static { s, .. } => s.trajectory_2d(num_points),
+                Self::Moving { o, .. } => o.trajectory_2d(num_points),
+            }
+        }
+
+        fn trajectory_3d(&self, num_points: i32) -> Vec<Point3D> {
+            match self {
+                Self::Static { s, .. } => s.trajectory_3d(num_points),
+                Self::Moving { o, .. } => o.trajectory_3d(num_points),
             }
         }
     }
