@@ -4,7 +4,7 @@ mod orbitor;
 use crate::orbitor::orbitor::{SolarSystemObject, SolarSystem, Orbitor};
 
 fn main() {
-    let mut solar_system = SolarSystem::new(8196, 20.0);
+    let mut solar_system = SolarSystem::new(768, 20.0);
     let sun = SolarSystemObject::new_static(
         String::from("Sun"), 
         &YELLOW,
@@ -135,6 +135,7 @@ fn main() {
         solar_system.add(&uranus);
         solar_system.add(&neptune);
     }
+    println!("{:?}", earth.orbital_period(0.0));
     // let (x, y, z) = sun.xyz(10.0);
     // let (x2, y2, z2) = mercury.xyz(10.0);
     // println!("{:?}", (-1000..1000)

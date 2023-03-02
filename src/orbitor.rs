@@ -3,6 +3,7 @@ pub mod orbitor {
     use std::{collections::HashMap};
     use std::{f64::consts::TAU};
     use plotters::{prelude::*, style::RGBColor, style::full_palette::{GREY}};
+    use time::{OffsetDateTime, macros::datetime};
 
 
     const SCALING_FACTOR: f64 = 25000000.0;
@@ -13,6 +14,15 @@ pub mod orbitor {
 
     pub fn rad_to_deg(x: f64) -> f64 {
         x / TAU * 360.0
+    }
+
+    pub const J2000: OffsetDateTime = datetime!(2000-01-01 12:00 UTC);
+
+    pub fn convert_datetime(dt: OffsetDateTime) -> f64 {
+        (dt.to_julian_day() - J2000.to_julian_day()) as f64 / 365.25 * 997.94  
+        // 997.94 is what i get for earth's orbit
+        // probably wrong but we're not really trying to be super rigorous
+        // don't even have most perturbations in
     }
 
     const G: f64 = 6.67430e-11;
@@ -324,7 +334,8 @@ pub mod orbitor {
                     // TODO we need to figure out what all this covers
                     match other.orbital_period(start_time) {
                         Some(time_range) => {
-                            for time in (0..num_points+1).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
+                            let full_period = time_range.max(self.orbital_period(start_time).unwrap());
+                            for time in (0..num_points+1).map(|x| x as f64 * full_period / num_points as f64 + start_time) {
                                 output.push(self.xy(time) - other.xy(time));
                             }
                             output
@@ -395,7 +406,7 @@ pub mod orbitor {
                 index: HashMap::new(),
                 zodiac: zodiac,
                 pixels: pixels,
-                stroke_width_base: pixels / 2048,
+                stroke_width_base: (pixels / 2048).max(1),
                 scale: scale,
             }
         }
@@ -466,18 +477,17 @@ pub mod orbitor {
             }
         }
 
-        pub fn plot_rel_2d(&'a self, center: &SolarSystemObject, time: f64) {
+        pub fn plot_rel_2d(&'a self, center: &SolarSystemObject, start_time: f64) {
             
             println!("Drawing...");
 
-            let offset = center.xy(time);
 
             // let root_drawing_area = SVGBackend::new("images/solar_system.svg", (self.pixels, self.pixels))
             //     .into_drawing_area();
-            let root_drawing_area = BitMapBackend::new("images/solar_system.png", (self.pixels, self.pixels))
+            // let root_drawing_area = BitMapBackend::new("images/solar_system.png", (self.pixels, self.pixels))
+            let root_drawing_area = BitMapBackend::gif("images/solar_system_anim.gif", (self.pixels, self.pixels), 100).unwrap()
                 .into_drawing_area();
 
-            root_drawing_area.fill(&BLACK).unwrap();
             let mut chart = ChartBuilder::on(&root_drawing_area)
                 .build_cartesian_2d(-self.scale..self.scale, -self.scale..self.scale)
                 .unwrap();
@@ -492,34 +502,43 @@ pub mod orbitor {
             //         Into::<ShapeStyle>::into(&GREY).stroke_width(self.stroke_width_base),
             //     )).unwrap();
             // }
-            for obj in self.objects() {
-                let loc = (obj.xy(time) - offset).loc();
-                chart.draw_series(PointSeries::of_element(
-                    vec![loc],
-                    self.stroke_width_base * 5,
-                    Into::<ShapeStyle>::into(obj.get_color()).filled(),
-                    &|coord, size, style| {
-                        EmptyElement::at(coord)
-                        + Circle::new(
-                            (0, 0),
-                            size,
-                            style
-                        )
-                    }
-                )).unwrap();
-                let angle = obj.angle_deg(center, time);
-                chart.draw_series(LineSeries::new(
-                    vec![(0.0, 0.0), loc],
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base)
-                )).unwrap();
-                let angle_rounded = (angle / 30.0).floor() as i32 * 30;
-                let sign = self.zodiac.get(&angle_rounded);
-                println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
-                let stroke_width = if obj.get_name() == "Moon" {1} else {2};
-                chart.draw_series(LineSeries::new(
-                    obj.trajectory_relative_2d(center, time, 200).iter().map(|x| x.loc()),
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base * stroke_width),
-                )).unwrap();
+            for i in 0..400 {
+                if i % 10 == 0 {
+                    println!("{i}");
+                }
+                let time = start_time - (i * 5) as f64;
+                let offset = center.xy(time);
+                root_drawing_area.fill(&BLACK).unwrap();
+                for obj in self.objects() {
+                    let loc = (obj.xy(time) - offset).loc();
+                    chart.draw_series(PointSeries::of_element(
+                        vec![loc],
+                        self.stroke_width_base * 5,
+                        Into::<ShapeStyle>::into(obj.get_color()).filled(),
+                        &|coord, size, style| {
+                            EmptyElement::at(coord)
+                            + Circle::new(
+                                (0, 0),
+                                size,
+                                style
+                            )
+                        }
+                    )).unwrap();
+                    chart.draw_series(LineSeries::new(
+                        vec![(0.0, 0.0), loc],
+                        Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base)
+                    )).unwrap();
+                    // let angle = obj.angle_deg(center, time);
+                    // let angle_rounded = (angle / 30.0).floor() as i32 * 30;
+                    // let sign = self.zodiac.get(&angle_rounded);
+                    // println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
+                    let stroke_width = if obj.get_name() == "Moon" {1} else {2};
+                    chart.draw_series(LineSeries::new(
+                        obj.trajectory_relative_2d(center, time, 100).iter().map(|x| x.loc()),
+                        Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base * stroke_width),
+                    )).unwrap();
+                }
+                root_drawing_area.present().unwrap();
             }
         }
 
