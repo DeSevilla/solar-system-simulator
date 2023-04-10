@@ -1,10 +1,11 @@
 use plotters::{prelude::*, style::full_palette::{GREY, ORANGE, BLUE_300, BLUE_100, PURPLE}};
+use time::Duration;
 mod orbitor;
 
-use crate::orbitor::orbitor::{SolarSystemObject, SolarSystem, Orbitor};
+use crate::orbitor::orbitor::{SolarSystemObject, SolarSystem, Orbitor, Locatable, datetime_to_j2000_second, j2000_second_to_datetime};
 
 fn main() {
-    let mut solar_system = SolarSystem::new(768, 20.0);
+    let mut solar_system = SolarSystem::new(768, 200.0);
     let sun = SolarSystemObject::new_static(
         String::from("Sun"), 
         &YELLOW,
@@ -18,7 +19,7 @@ fn main() {
         &WHITE,
         3.3011e23,
         &sun,
-        5.7909e+7,
+        5.7909e+10,
         0.2056,
         7.004,
         48.331,
@@ -31,7 +32,7 @@ fn main() {
         &PURPLE,
         4.8675e24,
         &sun,
-        108208000.0,
+        108208000000.0,
         0.06772,
         3.39458,
         76.68,
@@ -44,7 +45,7 @@ fn main() {
         &BLUE_300,
         5.97217e24,
         &sun,
-        149598023.0,
+        149598023000.0,
         0.0167086,
         0.00005,
         -11.26064, 
@@ -53,15 +54,15 @@ fn main() {
     );
     solar_system.add(&earth);
     let moon_loc = |time| Orbitor::new(
-            7.342e22,
-            &earth,
-            384399.0,
-            0.0549,
-            5.145,
-            125.08 - time * 360.0 / (18.61 * 1000.0),
-            318.15 + time * 360.0 / (8.85 * 1000.0),
-            135.27,
-        );
+        7.342e22,
+        &earth,
+        384399000.0,
+        0.0549,
+        5.145,
+        125.08 - time * 360.0 / (18.61 * 1000.0),
+        318.15 + time * 360.0 / (8.85 * 1000.0),
+        135.27,
+    );
     let moon = SolarSystemObject::new_variable(
         String::from("Moon"),
         &GREY,
@@ -73,7 +74,7 @@ fn main() {
         &RED,
         6.4171e23,
         &sun,
-        227939366.0,
+        227939366000.0,
         0.0934,
         1.850,
         49.57854,
@@ -86,7 +87,7 @@ fn main() {
         &ORANGE,
         1.8982e27,
         &sun,
-        778479000.0,
+        778479000000.0,
         0.0489,
         1.303,
         100.464,
@@ -98,7 +99,7 @@ fn main() {
         &RGBColor(100, 100, 0),
         5.6834e24,
         &sun,
-        1433530000.0,
+        1433530000000.0,
         0.0565,
         2.485,
         113.665,
@@ -110,7 +111,7 @@ fn main() {
         &BLUE_100,
         8.6810e25,
         &sun,
-        2870972000.0,
+        2870972000000.0,
         0.04717,
         0.773,
         74.006, 
@@ -122,7 +123,7 @@ fn main() {
         &BLUE,
         1.02413e26,
         &sun,
-        4500000000.0,
+        4500000000000.0,
         0.008678,
         1.770,
         131.783,
@@ -135,7 +136,12 @@ fn main() {
         solar_system.add(&uranus);
         solar_system.add(&neptune);
     }
-    println!("{:?}", earth.orbital_period(0.0));
+    let year_seconds = match earth.orbital_period(0.0) {
+        Some(t) => t,
+        None => -1.0,
+    };
+    let year = Duration::seconds(year_seconds as i64);
+    println!("Year: {year}");
     // let (x, y, z) = sun.xyz(10.0);
     // let (x2, y2, z2) = mercury.xyz(10.0);
     // println!("{:?}", (-1000..1000)
@@ -149,23 +155,39 @@ fn main() {
     //     .map(|(x, y)| (x*x+y*y).sqrt())
     //     .min_by(|x, y| x.partial_cmp(y).unwrap()).unwrap());
     // println!("{} {} {}; {} {} {}", x, y, z, x2, y2, z2);
-    let dim = 2;
-    let rel = true;
-    if rel {
-        if dim == 2 {
-            solar_system.plot_rel_2d(&earth, 0.0);
-        }
-        else {
-            solar_system.plot_rel_3d(&earth, 0.0);
-        }
-    }
-    else {
-        if dim == 2 {
-            solar_system.plot_2d(&earth, 0.0);
-        }
-        else {
-            solar_system.plot_3d(&earth, 0.0);
-        }
-    }
+    // let dim = 2;
+    // let rel = true;
+    // if rel {
+    //     if dim == 2 {
+    //         solar_system.plot_rel_2d(&earth, 0.0);
+    //     }
+    //     else {
+    //         solar_system.plot_rel_3d(&earth, 0.0);
+    //     }
+    // }
+    // else {
+    //     if dim == 2 {
+    //         solar_system.plot_2d(&earth, 0.0);
+    //     }
+    //     else {
+    //         solar_system.plot_3d(&earth, 0.0);
+    //     }
+    // }
+    let pisces_time = match earth.next_time_angle_deg_in_range(&neptune, 30.0, 60.0, 0.0) {
+        Some(next_time) => next_time,
+        None => -1.0,
+    };
+    println!("{}", j2000_second_to_datetime(pisces_time));
+    let angle = neptune.angle_deg(&earth, pisces_time);
+    let angle_rounded = (angle / 30.0).floor() as i32 * 30;
+    println!("Angle at time: {angle}, {angle_rounded}");
+    let actual_sign = match solar_system.zodiac_for(
+        &String::from("Neptune"), 
+        &String::from("Earth"),
+        pisces_time) {
+            Some(sign) => sign,
+            None => "Error",
+    };
+    println!("{actual_sign}");
     println!("Done");
 }

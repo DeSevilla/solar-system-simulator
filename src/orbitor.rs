@@ -3,6 +3,7 @@ pub mod orbitor {
     use std::{collections::HashMap};
     use std::{f64::consts::TAU};
     use plotters::{prelude::*, style::RGBColor, style::full_palette::{GREY}};
+    use time::ext::NumericalDuration;
     use time::{OffsetDateTime, macros::datetime};
 
 
@@ -18,11 +19,12 @@ pub mod orbitor {
 
     pub const J2000: OffsetDateTime = datetime!(2000-01-01 12:00 UTC);
 
-    pub fn convert_datetime(dt: OffsetDateTime) -> f64 {
-        (dt.to_julian_day() - J2000.to_julian_day()) as f64 / 365.25 * 997.94  
-        // 997.94 is what i get for earth's orbit
-        // probably wrong but we're not really trying to be super rigorous
-        // don't even have most perturbations in
+    pub fn datetime_to_j2000_second(dt: OffsetDateTime) -> f64 {
+        (dt - J2000).as_seconds_f64()
+    }
+
+    pub fn j2000_second_to_datetime(time: f64) -> OffsetDateTime {
+        J2000 + time.seconds()
     }
 
     const G: f64 = 6.67430e-11;
@@ -285,6 +287,30 @@ pub mod orbitor {
             }
         }
 
+        pub fn next_time_angle_rad_in_range(&self, other: &SolarSystemObject,
+                                        angle_start: f64, angle_end: f64,
+                                        start_time: f64) -> Option<f64> {
+            let max_time = self.orbital_period(start_time)? * other.orbital_period(start_time)?;
+            for i in 0..(max_time/86400.0) as i32 {
+                let time = start_time + (i * 86400) as f64;
+                let angle = other.angle_rad(self, time);
+                if angle_start < angle && angle < angle_end {
+                    return Some(time);
+                }
+            }
+            None
+        }
+
+        pub fn next_time_angle_deg_in_range(&self, other: &SolarSystemObject,
+                                        angle_start: f64, angle_end: f64,
+                                        start_time: f64) -> Option<f64> {
+            self.next_time_angle_rad_in_range(
+                other, 
+                deg_to_rad(angle_start), deg_to_rad(angle_end), 
+                start_time
+            )
+        }
+
         fn trajectory_2d(&self, start_time: f64, num_points: i32) -> Vec<Point2D> {
             match self {
                 Self::Static { s, .. } => vec![s.xy(start_time)],
@@ -420,6 +446,14 @@ pub mod orbitor {
             &(self.objects)
         }
 
+        pub fn zodiac_for(&'a self, obj_name: &String, center_name: &String, time: f64) -> Option<&String> {
+            let obj = self.index.get(obj_name)?;
+            let zodiac_center = *self.index.get(center_name)?;
+            let angle = obj.angle_deg(zodiac_center, time);
+            let angle_rounded = (angle / 30.0).floor() as i32 * 30;
+            self.zodiac.get(&angle_rounded)
+        }
+
         pub fn plot_2d(&'a self, zodiac_center: &SolarSystemObject, time: f64) {
             
             println!("Drawing...");
@@ -461,11 +495,11 @@ pub mod orbitor {
                         )
                     }
                 )).unwrap();
-                let angle = obj.angle_deg(zodiac_center, time);
                 chart.draw_series(LineSeries::new(
                     vec![(ex, ey), (ox, oy)],
                     Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base)
                 )).unwrap();
+                let angle = obj.angle_deg(zodiac_center, time);
                 let angle_rounded = (angle / 30.0).floor() as i32 * 30;
                 let sign = self.zodiac.get(&angle_rounded);
                 println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
@@ -541,8 +575,6 @@ pub mod orbitor {
                 root_drawing_area.present().unwrap();
             }
         }
-
-
 
         pub fn plot_3d(&'a self, zodiac_center: &SolarSystemObject, time: f64) {
             let Point3D(ex, ey, ez) = zodiac_center.xyz(time);
@@ -657,8 +689,6 @@ pub mod orbitor {
                 )).unwrap();
             }
         }
-
-
 
     }
 
