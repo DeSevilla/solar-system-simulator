@@ -2,12 +2,13 @@ pub mod orbitor {
     use std::ops::{Add, Sub};
     use std::{collections::HashMap};
     use std::{f64::consts::TAU};
-    use plotters::{prelude::*, style::RGBColor, style::full_palette::{GREY}};
+    use plotters::{style::RGBColor};
     use time::ext::NumericalDuration;
     use time::{OffsetDateTime, macros::datetime};
+    use bimap::BiMap;
 
 
-    const SCALING_FACTOR: f64 = 25000000.0;
+    const SCALING_FACTOR: f64 = 25000000000.0;
 
     pub fn deg_to_rad(x: f64) -> f64 {
         x * TAU / 360.0
@@ -19,47 +20,18 @@ pub mod orbitor {
 
     pub const J2000: OffsetDateTime = datetime!(2000-01-01 12:00 UTC);
 
-    pub fn datetime_to_j2000_second(dt: OffsetDateTime) -> f64 {
+    pub fn dt_to_internal(dt: OffsetDateTime) -> f64 {
         (dt - J2000).as_seconds_f64()
     }
 
-    pub fn j2000_second_to_datetime(time: f64) -> OffsetDateTime {
+    pub fn internal_to_dt(time: f64) -> OffsetDateTime {
         J2000 + time.seconds()
     }
 
     const G: f64 = 6.67430e-11;
 
     #[derive(Debug, Copy, Clone, PartialEq)]
-    pub struct Point2D(f64, f64);
-
-    impl Point2D {
-        pub fn loc(self) -> (f64, f64) {
-            let Point2D(x, y) = self;
-            (x, y)
-        }
-    }
-
-
-    impl Add for Point2D {
-        type Output = Self;
-        fn add(self, other: Self) -> Self::Output {
-            let Point2D(x, y) = self;
-            let Point2D(x2, y2) = other;
-            Point2D(x+x2, y+y2)
-        }
-    }
-
-    impl Sub for Point2D {
-        type Output = Self;
-        fn sub(self, other: Self) -> Self::Output {
-            let Point2D(x, y) = self;
-            let Point2D(x2, y2) = other;
-            Point2D(x-x2, y-y2)
-        }
-    }
-
-    #[derive(Debug, Copy, Clone, PartialEq)]
-    pub struct Point3D(f64, f64, f64);
+    pub struct Point3D(pub f64, pub f64, pub f64);
 
     impl Point3D {
         pub fn loc(self) -> (f64, f64, f64) {
@@ -83,6 +55,40 @@ pub mod orbitor {
             let Point3D(x, y, z) = self;
             let Point3D(x2, y2, z2) = other;
             Point3D(x-x2, y-y2, z-z2)
+        }
+    }
+
+    #[derive(Debug, Copy, Clone, PartialEq)]
+    pub struct Point2D(pub f64, pub f64);
+
+    impl Point2D {
+        pub fn loc(self) -> (f64, f64) {
+            let Point2D(x, y) = self;
+            (x, y)
+        }
+    }
+
+    impl Add for Point2D {
+        type Output = Self;
+        fn add(self, other: Self) -> Self::Output {
+            let Point2D(x, y) = self;
+            let Point2D(x2, y2) = other;
+            Point2D(x+x2, y+y2)
+        }
+    }
+
+    impl Sub for Point2D {
+        type Output = Self;
+        fn sub(self, other: Self) -> Self::Output {
+            let Point2D(x, y) = self;
+            let Point2D(x2, y2) = other;
+            Point2D(x-x2, y-y2)
+        }
+    }
+
+    impl From<Point3D> for Point2D {
+        fn from(Point3D(x, _, z): Point3D) -> Point2D {
+            Point2D(x, z)
         }
     }
 
@@ -150,7 +156,7 @@ pub mod orbitor {
             }
         }
 
-        fn orbital_period(&self, time: f64) -> f64 {
+        pub fn orbital_period(&self, time: f64) -> f64 {
             match self.parent.orbital_period(time) {
                 Some(period) => period,
                 None => {
@@ -160,7 +166,7 @@ pub mod orbitor {
             }
         }
 
-        fn current_mean_anomaly(&self, time: f64) -> f64 {
+        pub fn current_mean_anomaly(&self, time: f64) -> f64 {
             if self.semimajor == 0.0 {
                 0.0
             }
@@ -173,7 +179,7 @@ pub mod orbitor {
             }
         }
 
-        fn eccentric_anomaly(&self, mean_anomaly: f64) -> f64 {
+        pub fn eccentric_anomaly(&self, mean_anomaly: f64) -> f64 {
             let mut ecc = mean_anomaly;
             for _ in 0..5 {
                 ecc = ecc - (ecc - self.eccentricity * ecc.sin() - mean_anomaly)/(1.0 - self.eccentricity * ecc.cos());
@@ -183,13 +189,13 @@ pub mod orbitor {
             ecc
         }
         
-        fn true_anomaly(&self, eccentric_anomaly: f64) -> f64 {
+        pub fn true_anomaly(&self, eccentric_anomaly: f64) -> f64 {
             let left_term = (1.0 + self.eccentricity).sqrt() * (eccentric_anomaly/2.0).sin();
             let right_term = (1.0 - self.eccentricity).sqrt() * (eccentric_anomaly/2.0).cos();
             2.0 * left_term.atan2(right_term)
         }
         
-        fn orbit_xy(&self, time: f64) -> Point2D {
+        pub fn orbit_xy(&self, time: f64) -> Point2D {
             let mean_anom = self.current_mean_anomaly(time);
             let ecc_anom = self.eccentric_anomaly(mean_anom);
             let true_anom = self.true_anomaly(ecc_anom);
@@ -198,7 +204,7 @@ pub mod orbitor {
             Point2D(radius * true_anom.cos(), radius * true_anom.sin())
         }
         
-        fn in_parent_coordinates(&self, orbit_loc: Point2D) -> Point3D {
+        pub fn in_parent_coordinates(&self, orbit_loc: Point2D) -> Point3D {
             let Point2D(ox, oy) = orbit_loc;
             let aopcos = self.aop.cos();
             let aopsin = self.aop.sin();
@@ -221,15 +227,15 @@ pub mod orbitor {
     }
 
     impl<'a> SolarSystemObject<'a> {
-        pub fn new_static(name: String, color: &'a RGBColor, mass: f64, x: f64, y: f64, z: f64) -> SolarSystemObject<'a> {
+        pub fn new_static(name: impl Into<String>, color: &'a RGBColor, mass: f64, x: f64, y: f64, z: f64) -> SolarSystemObject<'a> {
             SolarSystemObject::Static {
-                name: name,
+                name: name.into(),
                 color: color,
                 s: StaticObject::new(mass, x, y, z)
             }
         }
 
-        pub fn new_orbitor(name: String,
+        pub fn new_orbitor(name: impl Into<String>,
                            color: &'a RGBColor,
                            mass: f64,
                            parent: &'a SolarSystemObject<'a>,
@@ -241,33 +247,33 @@ pub mod orbitor {
                            mae: f64
                         ) -> SolarSystemObject<'a> {
             SolarSystemObject::Orbit {
-                name: name,
+                name: name.into(),
                 color: color,
                 o: Orbitor::new(mass, parent, semimajor, eccentricity,
                     deg_to_rad(inclination), deg_to_rad(lan), deg_to_rad(aop), deg_to_rad(mae))}
         }
 
-        pub fn new_variable(name: String, color: &'a RGBColor, function: &'a dyn Fn(f64) -> Orbitor<'a>) -> SolarSystemObject<'a> {
+        pub fn new_variable(name: impl Into<String>, color: &'a RGBColor, function: &'a dyn Fn(f64) -> Orbitor<'a>) -> SolarSystemObject<'a> {
             SolarSystemObject::Variable { 
-                name: name, 
+                name: name.into(), 
                 color: color, 
                 f: function 
             }
         }
 
-        pub fn get_name(&self) -> &String {
+        pub fn get_name(&self) -> String {
             match self {
-                Self::Static { name, .. } => name,
-                Self::Orbit { name, .. } => name,
-                Self::Variable { name, .. } => name,
+                Self::Static { name, .. } => name.clone(),
+                Self::Orbit { name, .. } => name.clone(),
+                Self::Variable { name, .. } => name.clone(),
             }
         }
 
-        pub fn get_color(&self) -> &RGBColor {
+        pub fn get_color(&self) -> RGBColor {
             match self {
-                Self::Static { color, .. } => color,
-                Self::Orbit { color, .. } => color,
-                Self::Variable { color, .. } => color,
+                Self::Static { color, .. } => *color.clone(),
+                Self::Orbit { color, .. } => *color.clone(),
+                Self::Variable { color, .. } => *color.clone(),
             }
         }
 
@@ -291,12 +297,29 @@ pub mod orbitor {
                                         angle_start: f64, angle_end: f64,
                                         start_time: f64) -> Option<f64> {
             let max_time = self.orbital_period(start_time)? * other.orbital_period(start_time)?;
-            for i in 0..(max_time/86400.0) as i32 {
-                let time = start_time + (i * 86400) as f64;
+            let mut prev_time = start_time;
+            println!("Start: {start_time}");
+            for i in 0..=(max_time/86400.0) as i32 {
+                let time = start_time + (i as f64 * 86400.0);
                 let angle = other.angle_rad(self, time);
+                println!("Angle: {} ({} {})", 
+                    rad_to_deg(angle),
+                    rad_to_deg(angle_start),
+                    rad_to_deg(angle_end)
+                );
                 if angle_start < angle && angle < angle_end {
+                    println!("Prev time: {prev_time}");
+                    println!("End time: {time}");
+                    for i in 0..(time - prev_time) as i32 {
+                        let small_time = prev_time + i as f64;
+                        let small_angle = other.angle_rad(self, small_time);
+                        if angle_start < small_angle && small_angle < angle_end {
+                            return Some(small_time);
+                        }
+                    }
                     return Some(time);
                 }
+                prev_time = time;
             }
             None
         }
@@ -311,385 +334,112 @@ pub mod orbitor {
             )
         }
 
-        fn trajectory_2d(&self, start_time: f64, num_points: i32) -> Vec<Point2D> {
-            match self {
-                Self::Static { s, .. } => vec![s.xy(start_time)],
-                _ => {
-                    let mut output = Vec::new();
-                    let time_range = self.orbital_period(start_time).unwrap();
-                    // TODO don't like that unwrap much, but it does work in this case
-                    for time in (0..num_points+1).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
-                        output.push(self.xy(time));
-                    }
-                    output
-                }
+        pub fn trajectory(&self, start_time: f64, end_time: f64, num_points: i32) -> Vec<Point3D> {
+            let mut output = Vec::new();
+            let time_range = end_time - start_time;
+            for time in (0..=num_points).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
+                output.push(self.xyz(time));
             }
+            output
         }
 
-        fn trajectory_3d(&self, start_time: f64, num_points: i32) -> Vec<Point3D> {
-            match self {
-                Self::Static { s, .. } => vec![s.xyz(0.0)],
-                _ => {
-                    let mut output = Vec::new();
-                    let time_range = self.orbital_period(start_time).unwrap();
-                    // TODO don't like that unwrap much, but it does work in this case
-                    for time in (0..num_points+1).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
-                        output.push(self.xyz(time));
-                    }
-                    output
-                }
+        pub fn trajectory_relative(&self, other: &SolarSystemObject, start_time: f64, end_time: f64, num_points: i32) -> Vec<Point3D> {
+            let mut output = Vec::new();
+            let time_range = end_time - start_time;
+            for time in (0..=num_points).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
+                output.push(self.xyz(time) - other.xyz(time));
             }
-        }
-
-        fn trajectory_relative_2d(&self, other: &SolarSystemObject, start_time: f64, num_points: i32) -> Vec<Point2D> {
-            match self {
-                Self::Static { .. } => {
-                    let mut output = Vec::new();
-                    match other.orbital_period(start_time) {
-                        Some(time_range) => {
-                            for time in (0..num_points+1).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
-                                output.push(self.xy(time) - other.xy(time));
-                            }
-                            output
-                        }
-                        None => vec![self.xy(start_time) - other.xy(start_time)]
-                    }
-                }
-                _ => {
-                    let mut output = Vec::new();
-                    // TODO we need to figure out what all this covers
-                    match other.orbital_period(start_time) {
-                        Some(time_range) => {
-                            let full_period = time_range.max(self.orbital_period(start_time).unwrap());
-                            for time in (0..num_points+1).map(|x| x as f64 * full_period / num_points as f64 + start_time) {
-                                output.push(self.xy(time) - other.xy(time));
-                            }
-                            output
-                        }
-                        None => vec![self.xy(start_time) - other.xy(start_time)]
-                    } 
-                }
-            }
-        }
-
-        fn trajectory_relative_3d(&self, other: &SolarSystemObject, start_time: f64, num_points: i32) -> Vec<Point3D> {
-            match self {
-                Self::Static { .. } => {
-                    let mut output = Vec::new();
-                    match other.orbital_period(start_time) {
-                        Some(time_range) => {
-                            for time in (0..num_points+1).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
-                                output.push(self.xyz(time) - other.xyz(time));
-                            }
-                            output
-                        }
-                        None => vec![self.xyz(start_time) - other.xyz(start_time)]
-                    }
-                }
-                _ => {
-                    let mut output = Vec::new();
-                    // TODO we need to figure out what all this covers
-                    match other.orbital_period(start_time) {
-                        Some(time_range) => {
-                            for time in (0..num_points+1).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
-                                output.push(self.xyz(time) - other.xyz(time));
-                            }
-                            output
-                        }
-                        None => vec![self.xyz(start_time) - other.xyz(start_time)]
-                    } 
-                }
-            }
+            output
         }
     }
+
+
 
     pub struct SolarSystem<'a> {
         objects: Vec<&'a SolarSystemObject<'a>>,
-        index: HashMap<String, &'a SolarSystemObject<'a>>,
-        zodiac: HashMap<i32, String>,
-        pub pixels: u32,
-        pub stroke_width_base: u32,
-        pub scale: f64,
+        index: HashMap<String, usize>,
+        zodiac: BiMap<i32, String>,
+        zodiac_center: usize,
     }
 
     impl<'a> SolarSystem<'a> {
-        pub fn new(pixels: u32, scale: f64) -> SolarSystem<'a> {
-            let mut zodiac = HashMap::new();
-            zodiac.insert(0, String::from("Aries"));
-            zodiac.insert(30, String::from("Taurus"));
-            zodiac.insert(60, String::from("Gemini"));
-            zodiac.insert(90, String::from("Cancer"));
-            zodiac.insert(120, String::from("Leo"));
-            zodiac.insert(150, String::from("Virgo"));
-            zodiac.insert(180, String::from("Libra"));
-            zodiac.insert(210, String::from("Scorpio"));
-            zodiac.insert(240, String::from("Sagittarius"));
-            zodiac.insert(270, String::from("Capricorn"));
-            zodiac.insert(300, String::from("Aquarius"));
-            zodiac.insert(330, String::from("Pisces"));
+        pub fn new_empty() -> SolarSystem<'a> {
+            SolarSystem {
+                objects: Vec::new(),
+                index: HashMap::new(),
+                zodiac: BiMap::new(),
+                zodiac_center: 0
+            }
+        }
+        pub fn new(zodiac: BiMap<i32, String>, zodiac_center: usize) -> SolarSystem<'a> {
             SolarSystem {
                 objects: Vec::new(),
                 index: HashMap::new(),
                 zodiac: zodiac,
-                pixels: pixels,
-                stroke_width_base: (pixels / 2048).max(1),
-                scale: scale,
+                zodiac_center: zodiac_center
             }
         }
 
         pub fn add(&mut self, obj: &'a SolarSystemObject<'a>) {
+            self.index.insert(obj.get_name().to_lowercase(), self.objects.len());
             self.objects.push(obj);
-            self.index.insert(obj.get_name().clone(), obj);
         }
 
         pub fn objects(&'a self) -> &'a Vec<&'a SolarSystemObject<'a>> {
             &(self.objects)
         }
 
-        pub fn zodiac_for(&'a self, obj_name: &String, center_name: &String, time: f64) -> Option<&String> {
-            let obj = self.index.get(obj_name)?;
-            let zodiac_center = *self.index.get(center_name)?;
-            let angle = obj.angle_deg(zodiac_center, time);
+        pub fn get(&'a self, obj_name: impl Into<String>) -> Option<&'a SolarSystemObject<'a>> {
+            let string_name = obj_name.into();
+            let obj_idx = self.index.get(&string_name.to_lowercase())?;
+            let obj = self.objects.get(*obj_idx)?;
+            Some(obj)
+        }
+
+        pub fn zodiac_center(&'a self) -> &'a SolarSystemObject<'a> {
+            &self.objects[self.zodiac_center]
+        }
+
+        pub fn angle_to_sign(&'a self, angle: f64) -> String {
             let angle_rounded = (angle / 30.0).floor() as i32 * 30;
-            self.zodiac.get(&angle_rounded)
+            self.zodiac.get_by_left(&angle_rounded).unwrap().clone()
         }
 
-        pub fn plot_2d(&'a self, zodiac_center: &SolarSystemObject, time: f64) {
-            
-            println!("Drawing...");
 
-            let Point2D(ex, ey) = zodiac_center.xy(time);
-
-            // let root_drawing_area = SVGBackend::new("images/solar_system.svg", (self.pixels, self.pixels))
-            //     .into_drawing_area();
-            let root_drawing_area = BitMapBackend::new("images/solar_system.png", (self.pixels, self.pixels))
-                .into_drawing_area();
-
-            root_drawing_area.fill(&BLACK).unwrap();
-            let mut chart = ChartBuilder::on(&root_drawing_area)
-                .build_cartesian_2d(-self.scale..self.scale, -self.scale..self.scale)
-                .unwrap();
-
-            for angle in self.zodiac.keys() {
-                let angle_rad = deg_to_rad(*angle as f64);
-                let dx = angle_rad.cos();
-                let dy = angle_rad.sin();
-                let far_edge = (ex + self.scale * dx, ey + self.scale * dy);
-                chart.draw_series(LineSeries::new(
-                    vec![(ex, ey), far_edge],
-                    Into::<ShapeStyle>::into(&GREY).stroke_width(self.stroke_width_base),
-                )).unwrap();
-            }
-            for obj in self.objects() {
-                let Point2D(ox, oy) = obj.xy(time);
-                chart.draw_series(PointSeries::of_element(
-                    vec![(ox, oy)],
-                    self.stroke_width_base * 5,
-                    Into::<ShapeStyle>::into(obj.get_color()).filled(),
-                    &|coord, size, style| {
-                        EmptyElement::at(coord)
-                        + Circle::new(
-                            (0, 0),
-                            size,
-                            style
-                        )
-                    }
-                )).unwrap();
-                chart.draw_series(LineSeries::new(
-                    vec![(ex, ey), (ox, oy)],
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base)
-                )).unwrap();
-                let angle = obj.angle_deg(zodiac_center, time);
-                let angle_rounded = (angle / 30.0).floor() as i32 * 30;
-                let sign = self.zodiac.get(&angle_rounded);
-                println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
-                let stroke_width = if obj.get_name() == "Moon" {1} else {2};
-                chart.draw_series(LineSeries::new(
-                    obj.trajectory_2d(time, 200).iter().map(|x| x.loc()),
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base * stroke_width),
-                )).unwrap();
-            }
+        pub fn next_time_in_sign_dt(&'a self, 
+                                    obj_name: impl Into<String>, 
+                                    sign_name: impl Into<String>, 
+                                    start_time: OffsetDateTime) -> Option<OffsetDateTime> {
+            let start = dt_to_internal(start_time);
+            let next = self.next_time_in_sign(obj_name, sign_name, start)?;
+            Some(internal_to_dt(next))
         }
 
-        pub fn plot_rel_2d(&'a self, center: &SolarSystemObject, start_time: f64) {
-            
-            println!("Drawing...");
-
-
-            // let root_drawing_area = SVGBackend::new("images/solar_system.svg", (self.pixels, self.pixels))
-            //     .into_drawing_area();
-            // let root_drawing_area = BitMapBackend::new("images/solar_system.png", (self.pixels, self.pixels))
-            let root_drawing_area = BitMapBackend::gif("images/solar_system_anim.gif", (self.pixels, self.pixels), 100).unwrap()
-                .into_drawing_area();
-
-            let mut chart = ChartBuilder::on(&root_drawing_area)
-                .build_cartesian_2d(-self.scale..self.scale, -self.scale..self.scale)
-                .unwrap();
-
-            // for angle in self.zodiac.keys() {
-            //     let angle_rad = deg_to_rad(*angle as f64);
-            //     let dx = angle_rad.cos();
-            //     let dy = angle_rad.sin();
-            //     let far_edge = center + Point2D(self.scale * dx, self.scale * dy);
-            //     chart.draw_series(LineSeries::new(
-            //         vec![center.loc(), far_edge.loc()],
-            //         Into::<ShapeStyle>::into(&GREY).stroke_width(self.stroke_width_base),
-            //     )).unwrap();
-            // }
-            for i in 0..400 {
-                if i % 10 == 0 {
-                    println!("{i}");
-                }
-                let time = start_time - (i * 5) as f64;
-                let offset = center.xy(time);
-                root_drawing_area.fill(&BLACK).unwrap();
-                for obj in self.objects() {
-                    let loc = (obj.xy(time) - offset).loc();
-                    chart.draw_series(PointSeries::of_element(
-                        vec![loc],
-                        self.stroke_width_base * 5,
-                        Into::<ShapeStyle>::into(obj.get_color()).filled(),
-                        &|coord, size, style| {
-                            EmptyElement::at(coord)
-                            + Circle::new(
-                                (0, 0),
-                                size,
-                                style
-                            )
-                        }
-                    )).unwrap();
-                    chart.draw_series(LineSeries::new(
-                        vec![(0.0, 0.0), loc],
-                        Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base)
-                    )).unwrap();
-                    // let angle = obj.angle_deg(center, time);
-                    // let angle_rounded = (angle / 30.0).floor() as i32 * 30;
-                    // let sign = self.zodiac.get(&angle_rounded);
-                    // println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
-                    let stroke_width = if obj.get_name() == "Moon" {1} else {2};
-                    chart.draw_series(LineSeries::new(
-                        obj.trajectory_relative_2d(center, time, 100).iter().map(|x| x.loc()),
-                        Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base * stroke_width),
-                    )).unwrap();
-                }
-                root_drawing_area.present().unwrap();
-            }
+        pub fn next_time_in_sign(&'a self, 
+                                obj_name: impl Into<String>,
+                                sign_name: impl Into<String>, 
+                                start_time: f64) -> Option<f64> {
+            let string_sign = sign_name.into().to_lowercase();
+            let angle_start = *self.zodiac.get_by_right(&string_sign)? as f64;
+            let obj = self.get(obj_name)?;
+            self.zodiac_center().next_time_angle_deg_in_range(
+                obj,
+                angle_start,
+                angle_start + 30.0,
+                start_time
+            )
         }
 
-        pub fn plot_3d(&'a self, zodiac_center: &SolarSystemObject, time: f64) {
-            let Point3D(ex, ey, ez) = zodiac_center.xyz(time);
-            println!("Drawing...");
-
-            let root_drawing_area = BitMapBackend::new("images/solar_system_3d.png", (self.pixels, self.pixels))
-                .into_drawing_area();
-
-            root_drawing_area.fill(&BLACK).unwrap();
-            let mut chart = ChartBuilder::on(&root_drawing_area).margin(20).caption("Solar system", ("sans-serif", 20))
-                .build_cartesian_3d(
-                    -self.scale..self.scale,
-                    // -50.0..50.0,
-                    -self.scale..self.scale,
-                    -self.scale..self.scale)
-                .unwrap();
-            chart.with_projection(|mut pb| {
-                pb.pitch = 0.0;
-                pb.yaw = 1.0;
-                pb.scale = 1.3;
-                pb.into_matrix()
-            });
-            
-            chart.configure_axes().draw().unwrap();
-
-            for obj in self.objects() {
-                let Point3D(ox, oy, oz) = obj.xyz(time);
-                chart.draw_series(PointSeries::of_element(
-                    vec![(ox, oy, oz)],
-                    self.stroke_width_base * 5,
-                    Into::<ShapeStyle>::into(obj.get_color()).filled(),
-                    &|coord, size, style| {
-                        EmptyElement::at(coord)
-                        + Circle::new(
-                            (0, 0),
-                            size,
-                            style
-                        )
-                    }
-                )).unwrap();
-                let angle = obj.angle_deg(zodiac_center, time);
-                chart.draw_series(LineSeries::new(
-                    vec![(ex, ey, ez), (ox, oy, oz)],
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base)
-                )).unwrap();
-                let angle_rounded = (angle / 30.0).floor() as i32 * 30;
-                let sign = self.zodiac.get(&angle_rounded);
-                println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
-                let stroke_width = if obj.get_name() == "Moon" {1} else {2};
-                chart.draw_series(LineSeries::new(
-                    // (0..11).map(|i| i as f64 * TAU / 10.0).map(|i| match obj.xy(time) { (x, y) => (x + 10.0 * i.cos(), y + 10.0 * i.sin())}),
-                    obj.trajectory_3d(time, 45).iter().map(|x| x.loc()),
-                    // (-5000..5000).map(|x| x as f64 / 10.0).map(|x| obj.xy(x)),
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base * stroke_width),
-                )).unwrap();
-            }
+        pub fn zodiac_for_dt(&'a self, obj_name: impl Into<String>, time: OffsetDateTime) -> Option<String> {
+            let t = dt_to_internal(time);
+            self.zodiac_for(obj_name, t)
         }
 
-        pub fn plot_rel_3d(&'a self, center: &SolarSystemObject, time: f64) {
-            let offset = center.xyz(time);
-            println!("Drawing...");
-
-            let root_drawing_area = BitMapBackend::new("images/solar_system_3d.png", (self.pixels, self.pixels))
-                .into_drawing_area();
-
-            root_drawing_area.fill(&BLACK).unwrap();
-            let mut chart = ChartBuilder::on(&root_drawing_area).margin(20).caption("Solar system", ("sans-serif", 20))
-                .build_cartesian_3d(
-                    -self.scale..self.scale,
-                    // -50.0..50.0,
-                    -self.scale..self.scale,
-                    -self.scale..self.scale)
-                .unwrap();
-            chart.with_projection(|mut pb| {
-                pb.pitch = 0.0;
-                pb.yaw = 1.0;
-                pb.scale = 1.3;
-                pb.into_matrix()
-            });
-            
-            chart.configure_axes().draw().unwrap();
-
-            for obj in self.objects() {
-                let loc = (obj.xyz(time) - offset).loc();
-                chart.draw_series(PointSeries::of_element(
-                    vec![loc],
-                    self.stroke_width_base * 5,
-                    Into::<ShapeStyle>::into(obj.get_color()).filled(),
-                    &|coord, size, style| {
-                        EmptyElement::at(coord)
-                        + Circle::new(
-                            (0, 0),
-                            size,
-                            style
-                        )
-                    }
-                )).unwrap();
-                let angle = obj.angle_deg(center, time);
-                chart.draw_series(LineSeries::new(
-                    vec![(0.0, 0.0, 0.0), loc],
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base)
-                )).unwrap();
-                let angle_rounded = (angle / 30.0).floor() as i32 * 30;
-                let sign = self.zodiac.get(&angle_rounded);
-                println!("{}: {} ({}, {:?})", obj.get_name(), angle, angle_rounded, sign);
-                let stroke_width = if obj.get_name() == "Moon" {1} else {2};
-                chart.draw_series(LineSeries::new(
-                    // (0..11).map(|i| i as f64 * TAU / 10.0).map(|i| match obj.xy(time) { (x, y) => (x + 10.0 * i.cos(), y + 10.0 * i.sin())}),
-                    obj.trajectory_relative_3d(center, time, 45).iter().map(|x| x.loc()),
-                    // (-5000..5000).map(|x| x as f64 / 10.0).map(|x| obj.xy(x)),
-                    Into::<ShapeStyle>::into(obj.get_color()).stroke_width(self.stroke_width_base * stroke_width),
-                )).unwrap();
-            }
+        pub fn zodiac_for(&'a self, obj_name: impl Into<String>, time: f64) -> Option<String> {
+            let obj = self.get(obj_name)?;
+            let angle = obj.angle_deg(self.zodiac_center(), time);
+            Some(self.angle_to_sign(angle))
         }
-
     }
 
     impl Locatable for Orbitor<'_> {
@@ -714,7 +464,6 @@ pub mod orbitor {
         fn xy(&self, _time: f64) -> Point2D {
             Point2D(self.x, self.z)
         }
-
     }
 
     impl Locatable for SolarSystemObject<'_> {
