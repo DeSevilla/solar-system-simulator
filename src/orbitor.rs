@@ -7,8 +7,6 @@ pub mod orbitor {
     use plotters::{style::RGBColor};
     use time::ext::NumericalDuration;
     use time::{OffsetDateTime, macros::datetime};
-    use bimap::BiMap;
-
 
     const SCALING_FACTOR: f64 = 25000000000.0;
 
@@ -97,12 +95,12 @@ pub mod orbitor {
     pub trait Locatable {
         fn xyz(&self, time: f64) -> Point3D;
         fn xy(&self, time: f64) -> Point2D;
-        fn angle_rad(&self, other: &dyn Locatable, time: f64) -> f64 {
+        fn angle_rad(&self, other: &impl Locatable, time: f64) -> f64 {
             let Point2D(x, y) = self.xy(time);
             let Point2D(x2, y2) = other.xy(time);
             ((y - y2).atan2(x - x2) + TAU) % TAU
         }
-        fn angle_deg(&self, other: &dyn Locatable, time: f64) -> f64 {
+        fn angle_deg(&self, other: &impl Locatable, time: f64) -> f64 {
             rad_to_deg(self.angle_rad(other, time))
         }
     }
@@ -355,39 +353,105 @@ pub mod orbitor {
         }
     }
 
+    pub struct Zodiac {
+        signs: Vec<String>,
+        // count: usize,
+    }
 
+    impl Zodiac {
+        pub fn new(signs: Vec<String>) -> Zodiac {
+            // let mut signs = HashMap::new();
+            // let count = signs.len();
+            // for (i, sign) in sign_names.into_iter().enumerate() {
+            //     signs.insert(sign, (i * 360) as f64 / count as f64);
+            // }
+            Zodiac {
+                signs: signs,
+                // count: signs.len()
+            }
+        }
+
+        fn angle_to_index(&self, angle: f64) -> usize {
+            let angle = angle % 360.0;
+            (angle * self.signs.len() as f64 / 360.0).floor() as usize
+        }
+
+        fn index_to_angle(&self, idx: usize) -> f64 {
+            let idx = idx % self.signs.len();
+            (idx * 360) as f64 / self.signs.len() as f64
+        }
+
+        pub fn angles(&self) -> Vec<f64> {
+            let mut angles = Vec::new();
+            for i in 0..self.signs.len() {
+                angles.push(self.index_to_angle(i))
+            }
+            angles
+        }
+
+        pub fn get_sign(&self, angle: f64) -> &String {
+            &self.signs[self.angle_to_index(angle)]
+        }
+
+        pub fn get_angle_range(&self, sign: String) -> Option<(f64, f64)> {
+            for (i, s) in self.signs.iter().enumerate() {
+                if sign == *s {
+                    return Some((self.index_to_angle(i), self.index_to_angle(i+1)))
+                }
+            }
+            None
+        }
+    }
 
     pub struct SolarSystem<'a> {
         objects: Vec<Rc<SolarSystemObject<'a>>>,
         index: HashMap<String, usize>,
-        zodiac: BiMap<i32, String>,
+        zodiac: Zodiac,
         zodiac_center: usize,
     }
 
     impl<'a> SolarSystem<'a> {
-        pub fn new_empty() -> SolarSystem<'a> {
-            SolarSystem {
-                objects: Vec::new(),
-                index: HashMap::new(),
-                zodiac: BiMap::new(),
-                zodiac_center: 0
+        pub fn new_custom(zodiac_signs: Vec<String>, objects: Vec<Rc<SolarSystemObject<'a>>>, zodiac_center: usize) -> SolarSystem<'a> {
+            let mut index = HashMap::new();
+            for (i, obj) in objects.iter().enumerate() {
+                index.insert(obj.get_name().to_lowercase(), i);
+            };
+            SolarSystem { 
+                objects: objects,
+                index: index,
+                zodiac: Zodiac::new(zodiac_signs),
+                zodiac_center: zodiac_center
             }
         }
 
         pub fn new_default() -> SolarSystem<'a> {
-            let mut zodiac = BiMap::new();
-            zodiac.insert(0, "aries".into());
-            zodiac.insert(30, "taurus".into());
-            zodiac.insert(60, "gemini".into());
-            zodiac.insert(90, "cancer".into());
-            zodiac.insert(120, "leo".into());
-            zodiac.insert(150, "virgo".into());
-            zodiac.insert(180, "libra".into());
-            zodiac.insert(210, "scorpio".into());
-            zodiac.insert(240, "sagittarius".into());
-            zodiac.insert(270, "capricorn".into());
-            zodiac.insert(300, "aquarius".into());
-            zodiac.insert(330, "pisces".into());
+            let zodiac = Zodiac::new(vec![
+                "aries".into(),
+                "taurus".into(),
+                "gemini".into(),
+                "cancer".into(),
+                "leo".into(),
+                "virgo".into(),
+                "libra".into(),
+                "scorpio".into(),
+                "sagittarius".into(),
+                "capricorn".into(),
+                "aquarius".into(),
+                "pisces".into(),
+            ]);
+            // let mut zodiac = BiMap::new();
+            // zodiac.insert(0, "aries".into());
+            // zodiac.insert(30, "taurus".into());
+            // zodiac.insert(60, "gemini".into());
+            // zodiac.insert(90, "cancer".into());
+            // zodiac.insert(120, "leo".into());
+            // zodiac.insert(150, "virgo".into());
+            // zodiac.insert(180, "libra".into());
+            // zodiac.insert(210, "scorpio".into());
+            // zodiac.insert(240, "sagittarius".into());
+            // zodiac.insert(270, "capricorn".into());
+            // zodiac.insert(300, "aquarius".into());
+            // zodiac.insert(330, "pisces".into());
             let sun = SolarSystemObject::new_static(
                 "Sun", 
                 &YELLOW,
@@ -538,6 +602,10 @@ pub mod orbitor {
             &(self.objects)
         }
 
+        pub fn zodiac(&'a self) -> &Zodiac {
+            &self.zodiac
+        }
+
         pub fn get(&'a self, obj_name: impl Into<String>) -> Option<&'a SolarSystemObject<'a>> {
             let string_name = obj_name.into();
             let obj_idx = self.index.get(&string_name.to_lowercase())?;
@@ -550,10 +618,8 @@ pub mod orbitor {
         }
 
         pub fn angle_to_sign(&'a self, angle: f64) -> String {
-            let angle_rounded = (angle / 30.0).floor() as i32 * 30;
-            self.zodiac.get_by_left(&angle_rounded).unwrap().clone()
+            self.zodiac.get_sign(angle).clone()
         }
-
 
         pub fn next_time_in_sign_dt(&'a self, 
                                     obj_name: impl Into<String>, 
@@ -569,12 +635,12 @@ pub mod orbitor {
                                 sign_name: impl Into<String>, 
                                 start_time: f64) -> Option<f64> {
             let string_sign = sign_name.into().to_lowercase();
-            let angle_start = *self.zodiac.get_by_right(&string_sign)? as f64;
+            let (angle_start, angle_end) = self.zodiac.get_angle_range(string_sign)?;
             let obj = self.get(obj_name)?;
             self.zodiac_center().next_time_angle_deg_in_range(
                 obj,
                 angle_start,
-                angle_start + 30.0,
+                angle_end,
                 start_time
             )
         }

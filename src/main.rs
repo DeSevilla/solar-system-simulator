@@ -1,13 +1,12 @@
 use std::env;
 use std::time::SystemTime;
-use bimap::BiMap;
 use time::{
     OffsetDateTime, 
     format_description::well_known::{Iso8601, Rfc3339, Rfc2822}, 
     Date, 
     macros::format_description
 };
-use plotters::{prelude::*,  style::full_palette::{GREY, PURPLE, BLUE_300, ORANGE, BLUE_100}};
+use plotters::{prelude::*,  style::full_palette::GREY};
 
 mod orbitor;
 
@@ -16,8 +15,7 @@ use crate::orbitor::orbitor::{
     Locatable,
     J2000, 
     Point2D, Point3D,
-    SolarSystemObject, 
-    Orbitor,
+    deg_to_rad,
 };
 
 fn parse_time(time_str: &str) -> Result<OffsetDateTime, String> {
@@ -59,16 +57,16 @@ pub fn plot_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, t
         .build_cartesian_2d(-scale..scale, -scale..scale)
         .unwrap();
 
-    // for angle in solar_system.zodiac.left_values() {
-    //     let angle_rad = deg_to_rad(*angle as f64);
-    //     let dx = angle_rad.cos();
-    //     let dy = angle_rad.sin();
-    //     let far_edge = (ex + scale * dx, ey + scale * dy);
-    //     chart.draw_series(LineSeries::new(
-    //         vec![(ex, ey), far_edge],
-    //         Into::<ShapeStyle>::into(&GREY).stroke_width(stroke_width_base),
-    //     )).unwrap();
-    // }
+    for angle in solar_system.zodiac().angles() {
+        let angle_rad = deg_to_rad(angle);
+        let dx = angle_rad.cos();
+        let dy = angle_rad.sin();
+        let far_edge = (ex + scale * dx, ey + scale * dy);
+        chart.draw_series(LineSeries::new(
+            vec![(ex, ey), far_edge],
+            Into::<ShapeStyle>::into(&GREY).stroke_width(stroke_width_base),
+        )).unwrap();
+    }
     for obj in solar_system.objects() {
         let Point2D(ox, oy) = obj.xy(time);
         chart.draw_series(PointSeries::of_element(
@@ -107,26 +105,25 @@ pub fn plot_rel_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f6
     let stroke_width_base = (pixels / 2048).max(1);
     println!("Drawing 2d relative...");
 
-    // let root_drawing_area = SVGBackend::new("images/solar_system.svg", (pixels, pixels))
-    //     .into_drawing_area();
+    let root_drawing_area = SVGBackend::new("images/solar_system.svg", (pixels, pixels))
     // let root_drawing_area = BitMapBackend::new("images/solar_system.png", (pixels, pixels))
-    let root_drawing_area = BitMapBackend::gif("images/solar_system_anim.gif", (pixels, pixels), 100).unwrap()
+    // let root_drawing_area = BitMapBackend::gif("images/solar_system_anim.gif", (pixels, pixels), 100).unwrap()
         .into_drawing_area();
 
     let mut chart = ChartBuilder::on(&root_drawing_area)
         .build_cartesian_2d(-scale..scale, -scale..scale)
         .unwrap();
 
-    // for angle in solar_system.zodiac.keys() {
-    //     let angle_rad = deg_to_rad(*angle as f64);
-    //     let dx = angle_rad.cos();
-    //     let dy = angle_rad.sin();
-    //     let far_edge = solar_system.zodiac_center() + Point2D(scale * dx, scale * dy);
-    //     chart.draw_series(LineSeries::new(
-    //         vec![solar_system.zodiac_center().loc(), far_edge.loc()],
-    //         Into::<ShapeStyle>::into(&GREY).stroke_width(stroke_width_base),
-    //     )).unwrap();
-    // }
+    for angle in solar_system.zodiac().angles() {
+        let angle_rad = deg_to_rad(angle as f64);
+        let dx = angle_rad.cos();
+        let dy = angle_rad.sin();
+        let far_edge = solar_system.zodiac_center().xy(start_time) + Point2D(scale * dx, scale * dy);
+        chart.draw_series(LineSeries::new(
+            vec![solar_system.zodiac_center().xy(start_time).loc(), far_edge.loc()],
+            Into::<ShapeStyle>::into(&GREY).stroke_width(stroke_width_base),
+        )).unwrap();
+    }
     for i in 0..400 {
         if i % 10 == 0 {
             println!("{i}");
