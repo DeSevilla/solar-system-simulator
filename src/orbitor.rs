@@ -1,7 +1,9 @@
 pub mod orbitor {
     use std::ops::{Add, Sub};
+    use std::rc::Rc;
     use std::{collections::HashMap};
     use std::{f64::consts::TAU};
+    use plotters::{prelude::*,  style::full_palette::{GREY, PURPLE, BLUE_300, ORANGE, BLUE_100}};
     use plotters::{style::RGBColor};
     use time::ext::NumericalDuration;
     use time::{OffsetDateTime, macros::datetime};
@@ -125,7 +127,7 @@ pub mod orbitor {
 
     pub struct Orbitor<'a> {
         mass: f64,
-        parent: &'a SolarSystemObject<'a>,
+        parent: Rc<SolarSystemObject<'a>>,
         semimajor: f64,
         eccentricity: f64,
         inclination: f64,
@@ -137,7 +139,7 @@ pub mod orbitor {
     impl<'a> Orbitor<'a> {
         pub fn new(
             mass: f64,
-            parent: &'a SolarSystemObject<'a>, 
+            parent: Rc<SolarSystemObject<'a>>, 
             semimajor: f64, 
             eccentricity: f64, 
             inclination: f64, 
@@ -238,7 +240,7 @@ pub mod orbitor {
         pub fn new_orbitor(name: impl Into<String>,
                            color: &'a RGBColor,
                            mass: f64,
-                           parent: &'a SolarSystemObject<'a>,
+                           parent: Rc<SolarSystemObject<'a>>,
                            semimajor: f64,
                            eccentricity: f64,
                            inclination: f64,
@@ -356,7 +358,7 @@ pub mod orbitor {
 
 
     pub struct SolarSystem<'a> {
-        objects: Vec<&'a SolarSystemObject<'a>>,
+        objects: Vec<Rc<SolarSystemObject<'a>>>,
         index: HashMap<String, usize>,
         zodiac: BiMap<i32, String>,
         zodiac_center: usize,
@@ -371,21 +373,168 @@ pub mod orbitor {
                 zodiac_center: 0
             }
         }
-        pub fn new(zodiac: BiMap<i32, String>, zodiac_center: usize) -> SolarSystem<'a> {
-            SolarSystem {
+
+        pub fn new_default() -> SolarSystem<'a> {
+            let mut zodiac = BiMap::new();
+            zodiac.insert(0, "aries".into());
+            zodiac.insert(30, "taurus".into());
+            zodiac.insert(60, "gemini".into());
+            zodiac.insert(90, "cancer".into());
+            zodiac.insert(120, "leo".into());
+            zodiac.insert(150, "virgo".into());
+            zodiac.insert(180, "libra".into());
+            zodiac.insert(210, "scorpio".into());
+            zodiac.insert(240, "sagittarius".into());
+            zodiac.insert(270, "capricorn".into());
+            zodiac.insert(300, "aquarius".into());
+            zodiac.insert(330, "pisces".into());
+            let sun = SolarSystemObject::new_static(
+                "Sun", 
+                &YELLOW,
+                1.9885e30,
+                0.0,
+                0.0,
+                0.0);
+            let sun_rc = Rc::new(sun);
+            let mercury = SolarSystemObject::new_orbitor(
+                "Mercury",
+                &WHITE,
+                3.3011e23,
+                sun_rc.clone(),
+                5.7909e+10,
+                0.2056,
+                7.004,
+                48.331,
+                29.124,
+                174.796,
+            );
+            let venus = SolarSystemObject::new_orbitor(
+                "Venus",
+                &PURPLE,
+                4.8675e24,
+                sun_rc.clone(),
+                108208000000.0,
+                0.06772,
+                3.39458,
+                76.68,
+                54.884,
+                50.115,
+            );
+            let earth = SolarSystemObject::new_orbitor(
+                "Earth",
+                &BLUE_300,
+                5.97217e24,
+                sun_rc.clone(),
+                149598023000.0,
+                0.0167086,
+                0.00005,
+                -11.26064, 
+                114.20783,
+                358.617,
+            );
+            let earth_rc = Rc::new(earth);
+            let moon = SolarSystemObject::new_orbitor(
+                "Moon",
+                &GREY,
+                7.342e22,
+                earth_rc.clone(),
+                384399000.0,
+                0.0549,
+                5.145,
+                125.08 - 0.0 * 360.0 / (18.61 * 1000.0),
+                318.15 + 0.0 * 360.0 / (8.85 * 1000.0),
+                13.13,
+            );
+            // let moon = SolarSystemObject::new_variable(
+            //     "Moon",
+            //     &GREY,
+            //     &moon_loc 
+            // );
+            let mars = SolarSystemObject::new_orbitor(
+                "Mars",
+                &RED,
+                6.4171e23,
+                sun_rc.clone(),
+                227939366000.0,
+                0.0934,
+                1.850,
+                49.57854,
+                286.5,
+                19.412,
+            );
+            let jupiter = SolarSystemObject::new_orbitor(
+                "Jupiter",
+                &ORANGE,
+                1.8982e27,
+                sun_rc.clone(),
+                778479000000.0,
+                0.0489,
+                1.303,
+                100.464,
+                273.867,
+                20.020,
+            );
+            let saturn = SolarSystemObject::new_orbitor(
+                "Saturn",
+                &RGBColor(100, 100, 0),
+                5.6834e24,
+                sun_rc.clone(),
+                1433530000000.0,
+                0.0565,
+                2.485,
+                113.665,
+                339.392,
+                317.020,
+            );
+            let uranus = SolarSystemObject::new_orbitor(
+                "Uranus",
+                &BLUE_100,
+                8.6810e25,
+                sun_rc.clone(),
+                2870972000000.0,
+                0.04717,
+                0.773,
+                74.006, 
+                96.998857,
+                142.2386,
+            );
+            let neptune = SolarSystemObject::new_orbitor(
+                "Neptune", 
+                &BLUE,
+                1.02413e26,
+                sun_rc.clone(),
+                4500000000000.0,
+                0.008678,
+                1.770,
+                131.783,
+                273.187,
+                256.228,
+            );
+            let mut solar_system = SolarSystem {
                 objects: Vec::new(),
                 index: HashMap::new(),
                 zodiac: zodiac,
-                zodiac_center: zodiac_center
-            }
+                zodiac_center: 3,
+            };
+            solar_system.add(sun_rc);
+            solar_system.add(Rc::new(mercury));
+            solar_system.add(Rc::new(venus));
+            solar_system.add(earth_rc);
+            solar_system.add(Rc::new(moon));
+            solar_system.add(Rc::new(mars));
+            solar_system.add(Rc::new(jupiter));
+            solar_system.add(Rc::new(saturn));
+            solar_system.add(Rc::new(uranus));
+            solar_system.add(Rc::new(neptune));
+            solar_system
         }
 
-        pub fn add(&mut self, obj: &'a SolarSystemObject<'a>) {
+        pub fn add(&mut self, obj: Rc<SolarSystemObject<'a>>) {
             self.index.insert(obj.get_name().to_lowercase(), self.objects.len());
             self.objects.push(obj);
         }
 
-        pub fn objects(&'a self) -> &'a Vec<&'a SolarSystemObject<'a>> {
+        pub fn objects(&'a self) -> &'a Vec<Rc<SolarSystemObject<'a>>> {
             &(self.objects)
         }
 
