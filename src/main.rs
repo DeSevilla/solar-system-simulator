@@ -10,7 +10,7 @@ use plotters::{prelude::*,  style::full_palette::GREY};
 
 mod orbitor;
 
-use crate::orbitor::orbitor::{
+use crate::orbitor::{
     SolarSystem,
     Locatable,
     J2000, 
@@ -40,7 +40,7 @@ fn parse_time(time_str: &str) -> Result<OffsetDateTime, String> {
 }
 
 
-pub fn plot_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, time: f64) {
+pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
     let stroke_width_base = (pixels / 2048).max(1);
     
     println!("Drawing 2d absolute...");
@@ -64,7 +64,7 @@ pub fn plot_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, t
         let far_edge = (ex + scale * dx, ey + scale * dy);
         chart.draw_series(LineSeries::new(
             vec![(ex, ey), far_edge],
-            Into::<ShapeStyle>::into(&GREY).stroke_width(stroke_width_base),
+            Into::<ShapeStyle>::into(GREY).stroke_width(stroke_width_base),
         )).unwrap();
     }
     for obj in solar_system.objects() {
@@ -100,7 +100,7 @@ pub fn plot_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, t
     }
 }
 
-pub fn plot_rel_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, start_time: f64) {
+pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_time: f64) {
     
     let stroke_width_base = (pixels / 2048).max(1);
     println!("Drawing 2d relative...");
@@ -115,13 +115,13 @@ pub fn plot_rel_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f6
         .unwrap();
 
     for angle in solar_system.zodiac().angles() {
-        let angle_rad = deg_to_rad(angle as f64);
+        let angle_rad = deg_to_rad(angle);
         let dx = angle_rad.cos();
         let dy = angle_rad.sin();
         let far_edge = solar_system.zodiac_center().xy(start_time) + Point2D(scale * dx, scale * dy);
         chart.draw_series(LineSeries::new(
             vec![solar_system.zodiac_center().xy(start_time).loc(), far_edge.loc()],
-            Into::<ShapeStyle>::into(&GREY).stroke_width(stroke_width_base),
+            Into::<ShapeStyle>::into(GREY).stroke_width(stroke_width_base),
         )).unwrap();
     }
     for i in 0..400 {
@@ -170,7 +170,7 @@ pub fn plot_rel_2d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f6
     }
 }
 
-pub fn plot_3d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, time: f64) {
+pub fn plot_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
     let stroke_width_base = (pixels / 2048).max(1);
     let Point3D(ex, ey, ez) = solar_system.zodiac_center().xyz(time);
     println!("Drawing 3d absolute...");
@@ -229,7 +229,7 @@ pub fn plot_3d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, t
     }
 }
 
-pub fn plot_rel_3d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f64, time: f64) {
+pub fn plot_rel_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
     let stroke_width_base = (pixels / 2048).max(1);
     let offset = solar_system.zodiac_center().xyz(time);
     println!("Drawing 3d relative...");
@@ -287,8 +287,6 @@ pub fn plot_rel_3d<'a>(solar_system: &'a SolarSystem<'a>, pixels: u32, scale: f6
         )).unwrap();
     }
 }
-
-
 
 fn main() {
     // let year_seconds = match earth.orbital_period(86400.0 * 365.25 * 10.0) {
