@@ -1,11 +1,12 @@
-use std::env;
 use std::time::SystemTime;
+use orbitor::dt_to_internal;
 use time::{
     OffsetDateTime, 
     format_description::well_known::{Iso8601, Rfc3339, Rfc2822}, 
     Date, 
     macros::format_description
 };
+use clap::*;
 use plotters::{prelude::*,  style::full_palette::GREY};
 
 mod orbitor;
@@ -13,7 +14,7 @@ mod orbitor;
 use crate::orbitor::{
     SolarSystem,
     Locatable,
-    J2000, 
+    // J2000, 
     Point2D, Point3D,
     deg_to_rad,
 };
@@ -21,24 +22,18 @@ use crate::orbitor::{
 fn parse_time(time_str: &str) -> Result<OffsetDateTime, String> {
     if let Ok(time) = OffsetDateTime::parse(time_str, &Iso8601::DEFAULT) {
         Ok(time)
-    }
-    else if let Ok(time) = OffsetDateTime::parse(time_str, &Rfc2822) {
+    } else if let Ok(time) = OffsetDateTime::parse(time_str, &Rfc2822) {
         Ok(time)
-    }
-    else if let Ok(time) = OffsetDateTime::parse(time_str, &Rfc3339) {
+    } else if let Ok(time) = OffsetDateTime::parse(time_str, &Rfc3339) {
         Ok(time)
-    }
-    else if let Ok(date) = Date::parse(time_str, format_description!("[year]-[month]-[day]")) {
+    } else if let Ok(date) = Date::parse(time_str, format_description!("[year]-[month]-[day]")) {
         Ok(date.midnight().assume_utc())
-    }
-    else if time_str == "now" {
+    } else if time_str == "now" {
         Ok(SystemTime::now().into())
-    }
-    else {
+    } else {
         Err("Unknown".into())
     }
 }
-
 
 pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
     let stroke_width_base = (pixels / 2048).max(1);
@@ -47,10 +42,10 @@ pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
 
     let Point2D(ex, ey) = solar_system.zodiac_center().xy(time);
 
-    let root_drawing_area = SVGBackend::new("images/solar_system.svg", (pixels, pixels))
-        .into_drawing_area();
-    // let root_drawing_area = BitMapBackend::new("images/solar_system.png", (pixels, pixels))
+    // let root_drawing_area = SVGBackend::new("images/solar_system.svg", (pixels, pixels))
     //     .into_drawing_area();
+    let root_drawing_area = BitMapBackend::new("images/solar_system.png", (pixels, pixels))
+        .into_drawing_area();
 
     root_drawing_area.fill(&BLACK).unwrap();
     let mut chart = ChartBuilder::on(&root_drawing_area)
@@ -105,8 +100,8 @@ pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_ti
     let stroke_width_base = (pixels / 2048).max(1);
     println!("Drawing 2d relative...");
 
-    let root_drawing_area = SVGBackend::new("images/solar_system.svg", (pixels, pixels))
-    // let root_drawing_area = BitMapBackend::new("images/solar_system.png", (pixels, pixels))
+    // let root_drawing_area = SVGBackend::new("images/solar_system.svg", (pixels, pixels))
+    let root_drawing_area = BitMapBackend::new("images/solar_system.png", (pixels, pixels))
     // let root_drawing_area = BitMapBackend::gif("images/solar_system_anim.gif", (pixels, pixels), 100).unwrap()
         .into_drawing_area();
 
@@ -125,9 +120,9 @@ pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_ti
         )).unwrap();
     }
     for i in 0..400 {
-        if i % 10 == 0 {
-            println!("{i}");
-        }
+        // if i % 10 == 0 {
+        //     println!("{i}");
+        // }
         let time = start_time - (i * 5) as f64;
         let offset = solar_system.zodiac_center().xy(time);
         root_drawing_area.fill(&BLACK).unwrap();
@@ -187,7 +182,7 @@ pub fn plot_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
             -scale..scale)
         .unwrap();
     chart.with_projection(|mut pb| {
-        pb.pitch = 0.0;
+        pb.pitch = 0.1;
         pb.yaw = 1.0;
         pb.scale = 1.3;
         pb.into_matrix()
@@ -288,67 +283,142 @@ pub fn plot_rel_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f6
     }
 }
 
+fn print_next_sign_time(solar_system: &SolarSystem, planets: Vec<String>, sign: &String, start_time: OffsetDateTime) {
+    println!("Calculating next time for {sign} starting from {start_time}:");
+    for planet in planets {
+        // println!("Starting {planet}");
+        match solar_system.zodiac_for_dt(&planet, start_time) {
+            Some(s) => if s == sign.to_lowercase() {
+                    println!("  {planet}: already in {sign} at {start_time}");
+                } else {
+                    // println!("{planet} starts in {s}");
+                    match solar_system.next_time_in_sign_dt(&planet, sign, start_time) {
+                        Some(st) => println!("  {planet}: {st}"),
+                        None => println!("Error: Could not get next time {planet} will be in {sign}"),
+                    };
+                },
+            None => println!("Invalid")
+        }
+    }
+}
+
+fn print_current_signs(solar_system: &SolarSystem, planets: Vec<String>, time: OffsetDateTime) {
+    println!("Signs at {time}:");
+    for name in planets {
+        let sign = match solar_system.zodiac_for_dt(&name, time) {
+            Some(s) => s,
+            None => "Invalid".to_owned(),
+        };
+        println!("  {name}: {sign}");
+    }
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+enum ZodiacObject {
+    Sun,
+    Mercury,
+    Venus,
+    Moon,
+    Mars,
+    Jupiter,
+    Saturn,
+    Uranus,
+    Neptune,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ZodiacSign {
+    Aries,
+    Taurus,
+    Gemini,
+    Cancer,
+    Leo,
+    Virgo,
+    Libra,
+    Scorpio,
+    Sagittarius,
+    Capricorn,
+    Aquarius,
+    Pisces,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum PlotMode {
+    Abs2d,
+    Rel2d,
+    Abs3d,
+    Rel3d,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum Command {
+    Plot {
+        // #[arg(short, long, value_delimiter=',', num_args=1..)]
+        // objects: Option<Vec<PredefinedObject>>,
+        #[arg(short, long, default_value="2048")]
+        pixels: u32,
+        #[arg(short, long, default_value="200.0")]
+        scale: f64,
+        #[arg(short, long, default_value="now", value_parser=parse_time)]
+        time: OffsetDateTime,
+        #[arg(short, long, default_value="abs2d")]
+        mode: PlotMode,
+    },
+    Sign { 
+        #[arg(short, long, value_delimiter=',', num_args=1..)]
+        planets: Option<Vec<ZodiacObject>>,
+        #[arg(short, long, default_value="now", value_parser=parse_time)]
+        time: OffsetDateTime,
+    },
+    Next { 
+        sign: ZodiacSign,
+        #[arg(short, long, value_delimiter=',', num_args=1..)]
+        planets: Option<Vec<ZodiacObject>>,
+        #[arg(short, long, default_value="now", value_parser=parse_time)]
+        time: OffsetDateTime,
+    },
+}
+
+//Keplerian simulation of the solar system
+#[derive(Parser, Debug)]
+#[command(version, about, long_about=None)]
+struct Args {
+    // #[arg(short, long, default_value="2048")]
+    // pixels: u32,
+    // #[arg(short, long, default_value="200.0")]
+    // scale: f64,
+    // #[arg(short, long, value_delimiter=',', num_args=1..)]
+    // objects: Option<Vec<PredefinedObject>>,
+    #[command(subcommand)]
+    command: Command,
+}
+
 fn main() {
-    // let year_seconds = match earth.orbital_period(86400.0 * 365.25 * 10.0) {
-    //     Some(t) => t,
-    //     None => -1.0,
-    // };
-    // let year = Duration::seconds(year_seconds as i64);
-    // println!("Year: {year}");
-    let pixels = 2048;
-    let scale = 200.0;
     let solar_system = SolarSystem::new_default();
-    let args: Vec<String> = env::args().collect();
-    println!("{args:?}");
-    if args.len() > 1 {
-        let action = &args[1];
-        if action == "next" {
-            let planet = &args[2];
-            let sign = &args[3];
-            let time_str = if args.len() >= 5 { &args[4] } else { "now" };
-            let start_time = parse_time(time_str).unwrap_or_else(|_| {
-                println!("Usage: solar_system next <planet> <sign> [time]"); 
-                SystemTime::now().into()
-            });
-            let sign_time = match solar_system.next_time_in_sign_dt(planet, sign, start_time) {
-                Some(st) => st,
-                None => { println!("Error: Could not get next sign"); J2000 }
+    let args = Args::parse();
+    match args.command {
+        Command::Plot { pixels, scale, time, mode, } => {
+            let start_time = dt_to_internal(time);
+            match mode {
+                PlotMode::Abs2d => plot_2d(&solar_system, pixels, scale, start_time),
+                PlotMode::Rel2d => plot_rel_2d(&solar_system, pixels, scale, start_time),
+                PlotMode::Abs3d => plot_3d(&solar_system, pixels, scale, start_time),
+                PlotMode::Rel3d => plot_rel_3d(&solar_system, pixels, scale, start_time),
+            }
+        },
+        Command::Sign { planets, time } => {
+            let planet_names = match planets {
+                Some(pl) => pl.iter().map(|x| format!("{x:?}")).collect(),
+                None => solar_system.names().into_iter().filter(|s| *s != solar_system.zodiac_center().get_name()).collect(),
             };
-            println!("The next time {planet} will be in {sign} after {start_time} is {sign_time}");
-            // solar_system.plot_2d(&earth, dt_to_internal(sign_time));
-        }
-        else if action == "plot" {
-            let dimensions = &args[2];
-            let pers = &args[3];
-            match (dimensions.as_str(), pers.as_str()) {
-                ("2d", "abs") => plot_2d(&solar_system, pixels, scale, 0.0),
-                ("2d", "rel") => plot_rel_2d(&solar_system, pixels, scale, 0.0),
-                ("3d", "abs") => plot_3d(&solar_system, pixels, scale, 0.0),
-                ("3d", "rel") => plot_rel_3d(&solar_system, pixels, scale, 0.0),
-                _ => println!("Usage: solar_system plot <2d|3d> <abs|rel>")
-            }
-        }
-        else if action == "sign" {
-            let planet = &args[2];
-            let time_str = if args.len() >= 4 { args[3].as_str() } else { "now" };
-            let time = match parse_time(time_str) {
-                Ok(t) => t,
-                Err(s) => { println!("time parsing got {s}; using now"); SystemTime::now().into() }
+            print_current_signs(&solar_system, planet_names, time);
+        },
+        Command::Next { sign, planets, time } => {
+            let planet_names = match planets {
+                Some(pl) => pl.iter().map(|x| format!("{x:?}")).collect(),
+                None => solar_system.names().into_iter().filter(|s| *s != solar_system.zodiac_center().get_name()).collect(),
             };
-            if planet == "all" {
-                println!("Hello world")
-            }
-            else {
-                let sign = solar_system.zodiac_for_dt(planet, time).unwrap();
-                println!("Calculating {planet}'s sign as {sign} at {time}");
-            }
-        }
-        else {
-            println!("Error: Valid commands are next, sign, and plot")
+            print_next_sign_time(&solar_system, planet_names, &format!("{sign:?}"), time);
         }
     }
-    else {
-        println!("Error: Not enough arguments")
-    }
-    println!("Done");
 }

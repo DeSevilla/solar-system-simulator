@@ -1,9 +1,9 @@
 use std::ops::{Add, Sub};
 use std::rc::Rc;
-use std::{collections::HashMap};
-use std::{f64::consts::TAU};
-use plotters::{prelude::*,  style::full_palette::{GREY, PURPLE, BLUE_300, ORANGE, BLUE_100}};
-use plotters::{style::RGBColor};
+use std::collections::HashMap;
+use std::f64::consts::TAU;
+use plotters::prelude::*;
+use plotters::style::{RGBColor, full_palette::{GREY, PURPLE, BLUE_300, ORANGE, BLUE_100}};
 use time::ext::NumericalDuration;
 use time::{OffsetDateTime, macros::datetime};
 
@@ -226,7 +226,7 @@ pub enum SolarSystemObject {
 }
 
 impl SolarSystemObject {
-    pub fn new_static(name: impl Into<String>, color: RGBColor, mass: f64, x: f64, y: f64, z: f64) -> SolarSystemObject {
+    pub fn new_static(name: &str, color: RGBColor, mass: f64, x: f64, y: f64, z: f64) -> SolarSystemObject {
         SolarSystemObject::Static {
             name: name.into(),
             color,
@@ -234,16 +234,16 @@ impl SolarSystemObject {
         }
     }
 
-    pub fn new_orbitor(name: impl Into<String>,
-                        color: RGBColor,
-                        mass: f64,
-                        parent: Rc<SolarSystemObject>,
-                        semimajor: f64,
-                        eccentricity: f64,
-                        inclination: f64,
-                        lan: f64,
-                        aop: f64,
-                        mae: f64
+    pub fn new_orbitor(name: &str,
+                       color: RGBColor,
+                       mass: f64,
+                       parent: Rc<SolarSystemObject>,
+                       semimajor: f64,
+                       eccentricity: f64,
+                       inclination: f64,
+                       lan: f64,
+                       aop: f64,
+                       mae: f64
                     ) -> SolarSystemObject {
         SolarSystemObject::Orbit {
             name: name.into(),
@@ -252,7 +252,7 @@ impl SolarSystemObject {
                 deg_to_rad(inclination), deg_to_rad(lan), deg_to_rad(aop), deg_to_rad(mae))}
     }
 
-    // pub fn new_variable(name: impl Into<String>, color: RGBColor, function: &dyn Fn(f64) -> Orbitor) -> SolarSystemObject {
+    // pub fn new_variable(name: &str, color: RGBColor, function: &dyn Fn(f64) -> Orbitor) -> SolarSystemObject {
     //     SolarSystemObject::Variable { 
     //         name: name.into(), 
     //         color, 
@@ -295,20 +295,21 @@ impl SolarSystemObject {
     pub fn next_time_angle_rad_in_range(&self, other: &SolarSystemObject,
                                     angle_start: f64, angle_end: f64,
                                     start_time: f64) -> Option<f64> {
-        let max_time = self.orbital_period(start_time)? * other.orbital_period(start_time)?;
+        let max_time = self.orbital_period(start_time).unwrap_or(1.0) * other.orbital_period(start_time).unwrap_or(1.0);
         let mut prev_time = start_time;
-        println!("Start: {start_time}");
+        // println!("Start: {start_time}");
+        // println!("Time: {max_time}");
         for i in 0..=(max_time/86400.0) as i32 {
             let time = start_time + (i as f64 * 86400.0);
             let angle = other.angle_rad(self, time);
-            println!("Angle: {} ({} {})", 
-                rad_to_deg(angle),
-                rad_to_deg(angle_start),
-                rad_to_deg(angle_end)
-            );
+            // println!("Angle: {} ({} {})", 
+            //     rad_to_deg(angle),
+            //     rad_to_deg(angle_start),
+            //     rad_to_deg(angle_end)
+            // );
             if angle_start < angle && angle < angle_end {
-                println!("Prev time: {prev_time}");
-                println!("End time: {time}");
+                // println!("Prev time: {prev_time}");
+                // println!("End time: {time}");
                 for i in 0..(time - prev_time) as i32 {
                     let small_time = prev_time + i as f64;
                     let small_angle = other.angle_rad(self, small_time);
@@ -415,7 +416,7 @@ impl SolarSystem {
         for (i, obj) in objects.iter().enumerate() {
             index.insert(obj.get_name().to_lowercase(), i);
         };
-        SolarSystem { 
+        SolarSystem {
             objects,
             index,
             zodiac: Zodiac::new(zodiac_signs),
@@ -583,13 +584,20 @@ impl SolarSystem {
         &(self.objects)
     }
 
+    pub fn names(&self) -> Vec<String> {
+        self.objects.iter()
+            .map(|x| x.get_name())
+            // .filter(|s| !zodiac_only || s != &solar_system.zodiac_center().get_name())
+            .collect()
+    }
+
     pub fn zodiac(&self) -> &Zodiac {
         &self.zodiac
     }
 
-    pub fn get(&self, obj_name: impl Into<String>) -> Option<&SolarSystemObject> {
-        let string_name = obj_name.into();
-        let obj_idx = self.index.get(&string_name.to_lowercase())?;
+    pub fn get(&self, obj_name: &str) -> Option<&SolarSystemObject> {
+        // let string_name = obj_name.into();
+        let obj_idx = self.index.get(&obj_name.to_lowercase())?;
         let obj = self.objects.get(*obj_idx)?;
         Some(obj)
     }
@@ -603,8 +611,8 @@ impl SolarSystem {
     }
 
     pub fn next_time_in_sign_dt(&self, 
-                                obj_name: impl Into<String>, 
-                                sign_name: impl Into<String>, 
+                                obj_name: &str, 
+                                sign_name: &str, 
                                 start_time: OffsetDateTime) -> Option<OffsetDateTime> {
         let start = dt_to_internal(start_time);
         let next = self.next_time_in_sign(obj_name, sign_name, start)?;
@@ -612,10 +620,10 @@ impl SolarSystem {
     }
 
     pub fn next_time_in_sign(&self, 
-                            obj_name: impl Into<String>,
-                            sign_name: impl Into<String>, 
+                            obj_name: &str,
+                            sign_name: &str, 
                             start_time: f64) -> Option<f64> {
-        let string_sign = sign_name.into().to_lowercase();
+        let string_sign = sign_name.to_lowercase();
         let (angle_start, angle_end) = self.zodiac.get_angle_range(string_sign)?;
         let obj = self.get(obj_name)?;
         self.zodiac_center().next_time_angle_deg_in_range(
@@ -626,12 +634,12 @@ impl SolarSystem {
         )
     }
 
-    pub fn zodiac_for_dt(&self, obj_name: impl Into<String>, time: OffsetDateTime) -> Option<String> {
+    pub fn zodiac_for_dt(&self, obj_name: &str, time: OffsetDateTime) -> Option<String> {
         let t = dt_to_internal(time);
         self.zodiac_for(obj_name, t)
     }
 
-    pub fn zodiac_for(&self, obj_name: impl Into<String>, time: f64) -> Option<String> {
+    pub fn zodiac_for(&self, obj_name: &str, time: f64) -> Option<String> {
         let obj = self.get(obj_name)?;
         let angle = obj.angle_deg(self.zodiac_center(), time);
         Some(self.angle_to_sign(angle))
