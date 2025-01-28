@@ -1,12 +1,10 @@
 use std::time::SystemTime;
 use orbitor::dt_to_internal;
 use time::{
-    OffsetDateTime, 
-    format_description::well_known::{Iso8601, Rfc3339, Rfc2822}, 
-    Date, 
-    macros::format_description
+    format_description::well_known::{Iso8601, Rfc2822, Rfc3339}, macros::format_description, Date, OffsetDateTime
 };
 use clap::*;
+use uom::si::{angle::radian, f64::*, length::meter, time::second};
 use plotters::{prelude::*,  style::full_palette::GREY};
 
 mod orbitor;
@@ -14,9 +12,8 @@ mod orbitor;
 use crate::orbitor::{
     SolarSystem,
     Locatable,
-    // J2000, 
     Point2D, Point3D,
-    deg_to_rad,
+    // deg_to_rad,
 };
 
 fn parse_time(time_str: &str) -> Result<OffsetDateTime, String> {
@@ -35,12 +32,12 @@ fn parse_time(time_str: &str) -> Result<OffsetDateTime, String> {
     }
 }
 
-pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
+pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: Time) {
     let stroke_width_base = (pixels / 2048).max(1);
     
     println!("Drawing 2d absolute...");
 
-    let Point2D(ex, ey) = solar_system.zodiac_center().xy(time);
+    let (ex, ey) = solar_system.zodiac_center().xy(time).loc();
 
     // let root_drawing_area = SVGBackend::new("images/solar_system.svg", (pixels, pixels))
     //     .into_drawing_area();
@@ -53,7 +50,7 @@ pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
         .unwrap();
 
     for angle in solar_system.zodiac().angles() {
-        let angle_rad = deg_to_rad(angle);
+        let angle_rad = angle.get::<radian>(); //deg_to_rad(angle);
         let dx = angle_rad.cos();
         let dy = angle_rad.sin();
         let far_edge = (ex + scale * dx, ey + scale * dy);
@@ -63,7 +60,7 @@ pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
         )).unwrap();
     }
     for obj in solar_system.objects() {
-        let Point2D(ox, oy) = obj.xy(time);
+        let (ox, oy) = obj.xy(time).loc();
         chart.draw_series(PointSeries::of_element(
             vec![(ox, oy)],
             stroke_width_base * 5,
@@ -84,7 +81,7 @@ pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
         let stroke_width = if obj.get_name() == "Moon" {1} else {2};
         let end_time = match obj.orbital_period(time) {
             Some(op) => time + op,
-            None => time + 5.0
+            None => time + Time::new::<second>(5.0)
         };
         let trajectory: Vec<Point2D> = obj.trajectory(time, end_time, 100)
             .into_iter().map(|x| x.into()).collect();
@@ -95,7 +92,7 @@ pub fn plot_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
     }
 }
 
-pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_time: f64) {
+pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_time: Time) {
     
     let stroke_width_base = (pixels / 2048).max(1);
     println!("Drawing 2d relative...");
@@ -110,10 +107,10 @@ pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_ti
         .unwrap();
 
     for angle in solar_system.zodiac().angles() {
-        let angle_rad = deg_to_rad(angle);
+        let angle_rad = angle.get::<radian>(); //deg_to_rad(angle);
         let dx = angle_rad.cos();
         let dy = angle_rad.sin();
-        let far_edge = solar_system.zodiac_center().xy(start_time) + Point2D(scale * dx, scale * dy);
+        let far_edge = solar_system.zodiac_center().xy(start_time) + Point2D(Length::new::<meter>(scale * dx), Length::new::<meter>(scale * dy));
         chart.draw_series(LineSeries::new(
             vec![solar_system.zodiac_center().xy(start_time).loc(), far_edge.loc()],
             Into::<ShapeStyle>::into(GREY).stroke_width(stroke_width_base),
@@ -123,7 +120,7 @@ pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_ti
         // if i % 10 == 0 {
         //     println!("{i}");
         // }
-        let time = start_time - (i * 5) as f64;
+        let time = start_time - Time::new::<second>((i * 5) as f64);
         let offset = solar_system.zodiac_center().xy(time);
         root_drawing_area.fill(&BLACK).unwrap();
         for obj in solar_system.objects() {
@@ -165,9 +162,9 @@ pub fn plot_rel_2d(solar_system: &SolarSystem, pixels: u32, scale: f64, start_ti
     }
 }
 
-pub fn plot_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
+pub fn plot_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: Time) {
     let stroke_width_base = (pixels / 2048).max(1);
-    let Point3D(ex, ey, ez) = solar_system.zodiac_center().xyz(time);
+    let (ex, ey, ez) = solar_system.zodiac_center().xyz(time).loc();
     println!("Drawing 3d absolute...");
 
     let root_drawing_area = BitMapBackend::new("images/solar_system_3d.png", (pixels, pixels))
@@ -191,7 +188,7 @@ pub fn plot_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
     chart.configure_axes().draw().unwrap();
 
     for obj in solar_system.objects() {
-        let Point3D(ox, oy, oz) = obj.xyz(time);
+        let (ox, oy, oz) = obj.xyz(time).loc();
         chart.draw_series(PointSeries::of_element(
             vec![(ox, oy, oz)],
             stroke_width_base * 5,
@@ -212,7 +209,7 @@ pub fn plot_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
         let stroke_width = if obj.get_name() == "Moon" {1} else {2};
         let end_time = match obj.orbital_period(time) {
             Some(op) => time + op,
-            None => time + 5.0
+            None => time + Time::new::<second>(5.0),
         };
         let trajectory: Vec<Point3D> = obj.trajectory(time, end_time, 100);
         chart.draw_series(LineSeries::new(
@@ -224,7 +221,7 @@ pub fn plot_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
     }
 }
 
-pub fn plot_rel_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: f64) {
+pub fn plot_rel_3d(solar_system: &SolarSystem, pixels: u32, scale: f64, time: Time) {
     let stroke_width_base = (pixels / 2048).max(1);
     let offset = solar_system.zodiac_center().xyz(time);
     println!("Drawing 3d relative...");
@@ -352,6 +349,7 @@ enum PlotMode {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Command {
+    /// Plot a 2D or 3D visualization of the solar system at a point in time
     Plot {
         // #[arg(short, long, value_delimiter=',', num_args=1..)]
         // objects: Option<Vec<PredefinedObject>>,
@@ -364,12 +362,14 @@ enum Command {
         #[arg(short, long, default_value="abs2d")]
         mode: PlotMode,
     },
+    /// Calculate zodiac signs for planets at a point in time 
     Sign { 
         #[arg(short, long, value_delimiter=',', num_args=1..)]
         planets: Option<Vec<ZodiacObject>>,
         #[arg(short, long, default_value="now", value_parser=parse_time)]
         time: OffsetDateTime,
     },
+    /// Calculate next time planets will enter a zodiac sign from a starting time
     Next { 
         sign: ZodiacSign,
         #[arg(short, long, value_delimiter=',', num_args=1..)]
@@ -379,16 +379,10 @@ enum Command {
     },
 }
 
-//Keplerian simulation of the solar system
+///Keplerian simulation of the solar system. Supports 2D and 3D plots and zodiac sign calculations.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
 struct Args {
-    // #[arg(short, long, default_value="2048")]
-    // pixels: u32,
-    // #[arg(short, long, default_value="200.0")]
-    // scale: f64,
-    // #[arg(short, long, value_delimiter=',', num_args=1..)]
-    // objects: Option<Vec<PredefinedObject>>,
     #[command(subcommand)]
     command: Command,
 }

@@ -1,41 +1,93 @@
+use std::marker::PhantomData;
 use std::ops::{Add, Sub};
 use std::rc::Rc;
 use std::collections::HashMap;
 use std::f64::consts::TAU;
 use plotters::prelude::*;
 use plotters::style::{RGBColor, full_palette::{GREY, PURPLE, BLUE_300, ORANGE, BLUE_100}};
-use time::ext::NumericalDuration;
 use time::{OffsetDateTime, macros::datetime};
+use uom::si::angle::{degree, radian};
+use uom::si::mass::kilogram;
+use uom::si::ratio::ratio;
+use uom::si::time::{day, second};
+use uom::si::length::meter;
+use uom::si::{f64::*, Quantity};
+use uom::typenum::{Z0, P3, N1, N2};
+
+// #[derive(Clone, Copy, Debug)]
+// struct Time(f64);
+
+// #[derive(Clone, Copy, Debug)]
+// struct Duration(f64);
+
+// impl Add<Duration> for Time {
+//     type Output = Self;
+
+//     fn add(self, rhs: Duration) -> Self::Output {
+//         Time(self.0 + rhs.0)
+//     }
+// }
+
+// impl Sub for Time {
+//     type Output = Duration;
+
+//     fn sub(self, rhs: Self) -> Self::Output {
+//         Duration(self.0 - rhs.0)
+//     }
+// }
 
 const SCALING_FACTOR: f64 = 25000000000.0;
 
-pub fn deg_to_rad(x: f64) -> f64 {
-    x * TAU / 360.0
-}
+// /// Convert degrees to radians
+// pub fn deg_to_rad(x: f64) -> f64 {
+//     x * TAU / 360.0
+// }
 
-pub fn rad_to_deg(x: f64) -> f64 {
-    x / TAU * 360.0
+// /// Convert radians to degrees
+// pub fn rad_to_deg(x: f64) -> f64 {
+//     x / TAU * 360.0
+// }
+
+pub fn normalize(ang: Angle) -> Angle {
+    Angle::new::<radian>(ang.get::<radian>().rem_euclid(TAU))
 }
 
 pub const J2000: OffsetDateTime = datetime!(2000-01-01 12:00 UTC);
 
-pub fn dt_to_internal(dt: OffsetDateTime) -> f64 {
-    (dt - J2000).as_seconds_f64()
+pub fn dt_to_internal(dt: OffsetDateTime) -> Time {
+    let (dur, sign) = if J2000 > dt {
+        (J2000 - dt, -1.0)
+    } 
+    else {
+        (dt - J2000, 1.0)
+    };
+    let t: Time = std::time::Duration::try_from(dur).expect("Duration conversion should not violate base type range")
+        .try_into().expect("Duration should have been constructed non-negative");
+    t * sign
 }
 
-pub fn internal_to_dt(time: f64) -> OffsetDateTime {
-    J2000 + time.seconds()
+pub fn internal_to_dt(time: Time) -> OffsetDateTime {
+    let dur = std::time::Duration::try_from(time.abs()).expect("`time.abs()` should be non-negative");
+    if time.is_sign_negative() {
+        J2000 - dur
+    }
+    else {
+        J2000 + dur
+    }
 }
 
-const G: f64 = 6.67430e-11;
+
+
+// const G: f64 = 6.67430e-11;
+const G: Quantity<uom::si::ISQ<P3, N1, N2, Z0, Z0, Z0, Z0>, uom::si::SI<f64>, f64> = Quantity { dimension: PhantomData, units: PhantomData, value: 6.674e-11, };
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Point3D(pub f64, pub f64, pub f64);
+pub struct Point3D(pub Length, pub Length, pub Length);
 
 impl Point3D {
     pub fn loc(self) -> (f64, f64, f64) {
         let Point3D(x, y, z) = self;
-        (x, y, z)
+        (x.get::<meter>(), y.get::<meter>(), z.get::<meter>())
     }
 }
 
@@ -58,12 +110,12 @@ impl Sub for Point3D {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Point2D(pub f64, pub f64);
+pub struct Point2D(pub Length, pub Length);
 
 impl Point2D {
     pub fn loc(self) -> (f64, f64) {
         let Point2D(x, y) = self;
-        (x, y)
+        (x.get::<meter>(), y.get::<meter>())
     }
 }
 
@@ -92,27 +144,34 @@ impl From<Point3D> for Point2D {
 }
 
 pub trait Locatable {
-    fn xyz(&self, time: f64) -> Point3D;
-    fn xy(&self, time: f64) -> Point2D;
-    fn angle_rad(&self, other: &impl Locatable, time: f64) -> f64 {
+    fn xyz(&self, time: Time) -> Point3D;
+    fn xy(&self, time: Time) -> Point2D;
+    fn angle(&self, other: &impl Locatable, time: Time) -> Angle {
         let Point2D(x, y) = self.xy(time);
         let Point2D(x2, y2) = other.xy(time);
-        ((y - y2).atan2(x - x2) + TAU) % TAU
+        // ((y - y2).atan2(x - x2).get::<radian>() + TAU) % TAU
+        normalize((y - y2).atan2(x - x2))
     }
-    fn angle_deg(&self, other: &impl Locatable, time: f64) -> f64 {
-        rad_to_deg(self.angle_rad(other, time))
-    }
+    // fn angle_rad(&self, other: &impl Locatable, time: Time) -> f64 {
+    //     let Point2D(x, y) = self.xy(time);
+    //     let Point2D(x2, y2) = other.xy(time);
+    //     ((y - y2).atan2(x - x2).get::<radian>() + TAU) % TAU
+    //     // (y - y2).atan2(x - x2)
+    // }
+    // fn angle_deg(&self, other: &impl Locatable, time: Time) -> f64 {
+    //     rad_to_deg(self.angle_rad(other, time))
+    // }
 }
 
 pub struct StaticObject {
-    mass: f64,
-    x: f64,
-    y: f64,
-    z: f64
+    mass: Mass,
+    x: Length,
+    y: Length,
+    z: Length
 }
 
 impl StaticObject {
-    pub fn new(mass: f64, x: f64, y: f64, z:f64) -> StaticObject {
+    pub fn new(mass: Mass, x: Length, y: Length, z: Length) -> StaticObject {
         StaticObject {
             mass,
             x,
@@ -123,18 +182,18 @@ impl StaticObject {
 }
 
 pub struct Orbitor {
-    mass: f64,
+    mass: Mass,
     parent: Rc<SolarSystemObject>,
-    semimajor: f64,
+    semimajor: Length,
     eccentricity: f64,
-    inclination: f64,
-    lan: f64, //longitude of the ascending node
-    aop: f64, //argument of periapsis
-    mae: f64, //mean anomaly at epoch
+    inclination: Angle,
+    lan: Angle, //longitude of the ascending node
+    aop: Angle, //argument of periapsis
+    mae: Angle, //mean anomaly at epoch
 }
 
 impl Orbitor {
-    pub fn new(
+    pub fn new<T>(
         mass: f64,
         parent: Rc<SolarSystemObject>, 
         semimajor: f64, 
@@ -142,64 +201,64 @@ impl Orbitor {
         inclination: f64,
         lan: f64,
         aop: f64,
-        mae: f64) -> Orbitor {
+        mae: f64) -> Orbitor
+            where T: uom::si::angle::Unit + uom::si::angle::Conversion<f64> {
         Orbitor {
-            mass,
+            mass: Mass::new::<kilogram>(mass),
             parent,
-            semimajor,
+            semimajor: Length::new::<meter>(semimajor),
             eccentricity,
-            inclination,
-            lan,
-            aop,
-            mae,
+            inclination: Angle::new::<T>(inclination),
+            lan: Angle::new::<T>(lan),
+            aop: Angle::new::<T>(aop),
+            mae: Angle::new::<T>(mae),
         }
     }
 
-    pub fn orbital_period(&self, time: f64) -> f64 {
+    pub fn orbital_period(&self, time: Time) -> Time {
         match self.parent.orbital_period(time) {
             Some(period) => period,
             None => {
                 let mu = G * (self.mass + self.parent.get_mass());
-                TAU / (mu/self.semimajor.powi(3)).sqrt()
+                TAU / (mu/ (self.semimajor * self.semimajor * self.semimajor)).sqrt()
             }
         }
     }
 
-    pub fn current_mean_anomaly(&self, time: f64) -> f64 {
-        if self.semimajor == 0.0 {
-            0.0
+    pub fn current_mean_anomaly(&self, time: Time) -> Angle {
+        if self.semimajor.get::<meter>() == 0.0 {
+            Angle::new::<radian>(0.0)
         }
-        else if time == 0.0 {
+        else if time == Time::new::<second>(0.0) {
             self.mae
         }
         else {
             let mu = G * (self.mass + self.parent.get_mass());
-            (self.mae + time * (mu/self.semimajor.powi(3)).sqrt()) % TAU
+            let orbital_fraction = time * (mu/(self.semimajor * self.semimajor * self.semimajor)).sqrt();
+            let angle = normalize(Angle::from(orbital_fraction));
+            normalize(self.mae + angle) //time.get::<second>() * (mu/(self.semimajor * self.semimajor * self.semimajor).sqrt())) //% TAU
         }
     }
 
-    pub fn eccentric_anomaly(&self, mean_anomaly: f64) -> f64 {
-        let mut ecc = mean_anomaly;
+    pub fn eccentric_anomaly(&self, mean_anomaly: Angle) -> Angle {
+        let mut ecc = mean_anomaly.get::<radian>();
         for _ in 0..5 {
-            ecc = ecc - (ecc - self.eccentricity * ecc.sin() - mean_anomaly)/(1.0 - self.eccentricity * ecc.cos());
+            ecc = ecc - (ecc - self.eccentricity * ecc.sin() - mean_anomaly.get::<radian>())/(1.0 - self.eccentricity * ecc.cos());
         }
-        // println!("error: {}", mean_anomaly - ecc + self.eccentricity * ecc.sin());
-        // println!("mean_anom: {mean_anomaly} ecc: {ecc}");
-        ecc
+        normalize(Angle::new::<radian>(ecc))
     }
     
-    pub fn true_anomaly(&self, eccentric_anomaly: f64) -> f64 {
+    pub fn true_anomaly(&self, eccentric_anomaly: Angle) -> Angle {
         let left_term = (1.0 + self.eccentricity).sqrt() * (eccentric_anomaly/2.0).sin();
         let right_term = (1.0 - self.eccentricity).sqrt() * (eccentric_anomaly/2.0).cos();
-        2.0 * left_term.atan2(right_term)
+        normalize(2.0 * left_term.atan2(right_term))
     }
     
-    pub fn orbit_xy(&self, time: f64) -> Point2D {
+    pub fn orbit_xy(&self, time: Time) -> Point2D {
         let mean_anom = self.current_mean_anomaly(time);
         let ecc_anom = self.eccentric_anomaly(mean_anom);
         let true_anom = self.true_anomaly(ecc_anom);
-        // println!("err {}", mean_anom - true_anom);
-        let radius = self.semimajor * (1.0 - self.eccentricity * ecc_anom.cos());
+        let radius = self.semimajor * (1.0 - self.eccentricity * ecc_anom.cos().get::<ratio>()); //TODO
         Point2D(radius * true_anom.cos(), radius * true_anom.sin())
     }
     
@@ -211,7 +270,6 @@ impl Orbitor {
         let lansin = self.lan.sin();
         let inccos = self.inclination.cos();
         let incsin = self.inclination.sin();
-        // println!("{aopcos} {aopsin} {lancos} {lansin} {inccos} {incsin}");
         let x = ox * (aopcos * lancos - aopsin * inccos * lansin) - oy * (aopsin * lancos + aopcos * inccos * lansin);
         let y = ox * (aopcos * lansin + aopsin * inccos * lancos) + oy * (aopcos * inccos * lancos - aopsin * lansin);
         let z = ox * aopsin * incsin + oy * aopcos * incsin;
@@ -230,7 +288,7 @@ impl SolarSystemObject {
         SolarSystemObject::Static {
             name: name.into(),
             color,
-            s: StaticObject::new(mass, x, y, z)
+            s: StaticObject::new(Mass::new::<kilogram>(mass), Length::new::<meter>(x), Length::new::<meter>(y), Length::new::<meter>(z))
         }
     }
 
@@ -248,8 +306,8 @@ impl SolarSystemObject {
         SolarSystemObject::Orbit {
             name: name.into(),
             color,
-            o: Orbitor::new(mass, parent, semimajor, eccentricity,
-                deg_to_rad(inclination), deg_to_rad(lan), deg_to_rad(aop), deg_to_rad(mae))}
+            o: Orbitor::new::<degree>(mass, parent, semimajor, eccentricity, inclination, lan, aop, mae)
+        }
     }
 
     // pub fn new_variable(name: &str, color: RGBColor, function: &dyn Fn(f64) -> Orbitor) -> SolarSystemObject {
@@ -276,7 +334,7 @@ impl SolarSystemObject {
         }
     }
 
-    pub fn get_mass(&self) -> f64 {
+    pub fn get_mass(&self) -> Mass {
         match self {
             Self::Static { s, .. } => s.mass,
             Self::Orbit { o, .. } => o.mass,
@@ -284,7 +342,7 @@ impl SolarSystemObject {
         }
     }
 
-    pub fn orbital_period(&self, start_time: f64) -> Option<f64> {
+    pub fn orbital_period(&self, start_time: Time) -> Option<Time> {
         match self {
             Self::Orbit { o, .. } => Some (o.orbital_period(start_time)),
             Self::Static { .. } => None,
@@ -292,27 +350,23 @@ impl SolarSystemObject {
         }
     }
 
-    pub fn next_time_angle_rad_in_range(&self, other: &SolarSystemObject,
-                                    angle_start: f64, angle_end: f64,
-                                    start_time: f64) -> Option<f64> {
-        let max_time = self.orbital_period(start_time).unwrap_or(1.0) * other.orbital_period(start_time).unwrap_or(1.0);
+    pub fn next_time_angle_in_range(&self, other: &SolarSystemObject,
+                                    angle_start: Angle, angle_end: Angle,
+                                    start_time: Time) -> Option<Time> {
+        // TODO there has to be a more efficient way to calculate this...
+        let max_time = {
+            let t1 = self.orbital_period(start_time).unwrap_or(Time::new::<second>(1.0));
+            let t2 = other.orbital_period(start_time).unwrap_or(Time::new::<second>(1.0));
+            t1 * t2.get::<second>()
+        };
         let mut prev_time = start_time;
-        // println!("Start: {start_time}");
-        // println!("Time: {max_time}");
-        for i in 0..=(max_time/86400.0) as i32 {
-            let time = start_time + (i as f64 * 86400.0);
-            let angle = other.angle_rad(self, time);
-            // println!("Angle: {} ({} {})", 
-            //     rad_to_deg(angle),
-            //     rad_to_deg(angle_start),
-            //     rad_to_deg(angle_end)
-            // );
+        for ii in 0..=(max_time.get::<day>()) as i32 {
+            let time = start_time + Time::new::<day>(ii as f64);
+            let angle = other.angle(self, time);
             if angle_start < angle && angle < angle_end {
-                // println!("Prev time: {prev_time}");
-                // println!("End time: {time}");
-                for i in 0..(time - prev_time) as i32 {
-                    let small_time = prev_time + i as f64;
-                    let small_angle = other.angle_rad(self, small_time);
+                for jj in 0..(time - prev_time).get::<second>() as i32 {
+                    let small_time = prev_time + Time::new::<second>(jj as f64);
+                    let small_angle = other.angle(self, small_time);
                     if angle_start < small_angle && small_angle < angle_end {
                         return Some(small_time);
                     }
@@ -324,17 +378,17 @@ impl SolarSystemObject {
         None
     }
 
-    pub fn next_time_angle_deg_in_range(&self, other: &SolarSystemObject,
-                                    angle_start: f64, angle_end: f64,
-                                    start_time: f64) -> Option<f64> {
-        self.next_time_angle_rad_in_range(
-            other, 
-            deg_to_rad(angle_start), deg_to_rad(angle_end), 
-            start_time
-        )
-    }
+    // pub fn next_time_angle_deg_in_range(&self, other: &SolarSystemObject,
+    //                                 angle_start: Angle, angle_end: Angle,
+    //                                 start_time: Time) -> Option<Time> {
+    //     self.next_time_angle_rad_in_range(
+    //         other,
+    //         angle_start, angle_end, 
+    //         start_time
+    //     )
+    // }
 
-    pub fn trajectory(&self, start_time: f64, end_time: f64, num_points: i32) -> Vec<Point3D> {
+    pub fn trajectory(&self, start_time: Time, end_time: Time, num_points: i32) -> Vec<Point3D> {
         let mut output = Vec::new();
         let time_range = end_time - start_time;
         for time in (0..=num_points).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
@@ -343,7 +397,7 @@ impl SolarSystemObject {
         output
     }
 
-    pub fn trajectory_relative(&self, other: &SolarSystemObject, start_time: f64, end_time: f64, num_points: i32) -> Vec<Point3D> {
+    pub fn trajectory_relative(&self, other: &SolarSystemObject, start_time: Time, end_time: Time, num_points: i32) -> Vec<Point3D> {
         let mut output = Vec::new();
         let time_range = end_time - start_time;
         for time in (0..=num_points).map(|x| x as f64 * time_range / num_points as f64 + start_time) {
@@ -371,17 +425,17 @@ impl Zodiac {
         }
     }
 
-    fn angle_to_index(&self, angle: f64) -> usize {
-        let angle = angle % 360.0;
+    fn angle_to_index(&self, angle: Angle) -> usize {
+        let angle = normalize(angle).get::<degree>();
         (angle * self.signs.len() as f64 / 360.0).floor() as usize
     }
 
-    fn index_to_angle(&self, idx: usize) -> f64 {
+    fn index_to_angle(&self, idx: usize) -> Angle {
         let idx = idx % self.signs.len();
-        (idx * 360) as f64 / self.signs.len() as f64
+        normalize(Angle::new::<degree>((idx * 360) as f64 / self.signs.len() as f64))
     }
 
-    pub fn angles(&self) -> Vec<f64> {
+    pub fn angles(&self) -> Vec<Angle> {
         let mut angles = Vec::new();
         for i in 0..self.signs.len() {
             angles.push(self.index_to_angle(i))
@@ -389,11 +443,11 @@ impl Zodiac {
         angles
     }
 
-    pub fn get_sign(&self, angle: f64) -> &String {
+    pub fn get_sign(&self, angle: Angle) -> &String {
         &self.signs[self.angle_to_index(angle)]
     }
 
-    pub fn get_angle_range(&self, sign: String) -> Option<(f64, f64)> {
+    pub fn get_angle_range(&self, sign: String) -> Option<(Angle, Angle)> {
         for (i, s) in self.signs.iter().enumerate() {
             if sign == *s {
                 return Some((self.index_to_angle(i), self.index_to_angle(i+1)))
@@ -537,7 +591,7 @@ impl SolarSystem {
             BLUE_100,
             8.6810e25,
             sun_rc.clone(),
-            2870972000000.0,
+            2.870972e12,
             0.04717,
             0.773,
             74.006, 
@@ -547,13 +601,13 @@ impl SolarSystem {
         let neptune = SolarSystemObject::new_orbitor(
             "Neptune", 
             BLUE,
-            1.02413e26,
+            1.02409e26,
             sun_rc.clone(),
-            4500000000000.0,
+            4.514953e12,
             0.008678,
-            1.770,
-            131.783,
-            273.187,
+            1.77,
+            131.721,
+            273.24966,
             256.228,
         );
         let mut solar_system = SolarSystem {
@@ -606,7 +660,7 @@ impl SolarSystem {
         &self.objects[self.zodiac_center]
     }
 
-    pub fn angle_to_sign(&self, angle: f64) -> String {
+    pub fn angle_to_sign(&self, angle: Angle) -> String {
         self.zodiac.get_sign(angle).clone()
     }
 
@@ -622,11 +676,11 @@ impl SolarSystem {
     pub fn next_time_in_sign(&self, 
                             obj_name: &str,
                             sign_name: &str, 
-                            start_time: f64) -> Option<f64> {
+                            start_time: Time) -> Option<Time> {
         let string_sign = sign_name.to_lowercase();
         let (angle_start, angle_end) = self.zodiac.get_angle_range(string_sign)?;
         let obj = self.get(obj_name)?;
-        self.zodiac_center().next_time_angle_deg_in_range(
+        self.zodiac_center().next_time_angle_in_range(
             obj,
             angle_start,
             angle_end,
@@ -639,21 +693,21 @@ impl SolarSystem {
         self.zodiac_for(obj_name, t)
     }
 
-    pub fn zodiac_for(&self, obj_name: &str, time: f64) -> Option<String> {
+    pub fn zodiac_for(&self, obj_name: &str, time: Time) -> Option<String> {
         let obj = self.get(obj_name)?;
-        let angle = obj.angle_deg(self.zodiac_center(), time);
+        let angle = obj.angle(self.zodiac_center(), time);
         Some(self.angle_to_sign(angle))
     }
 }
 
 impl Locatable for Orbitor {
-    fn xyz(&self, time: f64) -> Point3D {
+    fn xyz(&self, time: Time) -> Point3D {
         let Point3D(x, y, z) = self.parent.xyz(time);
         let Point3D(x2, y2, z2) = self.in_parent_coordinates(self.orbit_xy(time));
         Point3D(x + x2 / SCALING_FACTOR, y + y2 / SCALING_FACTOR, z + z2 / SCALING_FACTOR)
     }
 
-    fn xy(&self, time: f64) -> Point2D {
+    fn xy(&self, time: Time) -> Point2D {
         let Point3D(x, _, z) = self.xyz(time);
         // println!("{x} {y}");
         Point2D(x, z)
@@ -661,17 +715,17 @@ impl Locatable for Orbitor {
 }
 
 impl Locatable for StaticObject {
-    fn xyz(&self, _time: f64) -> Point3D {
+    fn xyz(&self, _time: Time) -> Point3D {
         Point3D(self.x, self.y, self.z)
     }
 
-    fn xy(&self, _time: f64) -> Point2D {
+    fn xy(&self, _time: Time) -> Point2D {
         Point2D(self.x, self.z)
     }
 }
 
 impl Locatable for SolarSystemObject {
-    fn xyz(&self, time: f64) -> Point3D {
+    fn xyz(&self, time: Time) -> Point3D {
         match self {
             Self::Static { s, .. } => s.xyz(time),
             Self::Orbit { o, .. } => o.xyz(time),
@@ -679,7 +733,7 @@ impl Locatable for SolarSystemObject {
         }
     }
 
-    fn xy(&self, time: f64) -> Point2D {
+    fn xy(&self, time: Time) -> Point2D {
         match self {
             Self::Static { s, .. } => s.xy(time),
             Self::Orbit { o, .. } => o.xy(time),
